@@ -11,9 +11,46 @@ export const SupabaseService = {
         return await supabase.auth.getSession();
     },
 
-    getUser: async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        return user;
+    getUser: async (): Promise<User | null> => {
+        const { data: { user: authUser } } = await supabase.auth.getSession().then(({ data }) => ({ data: { user: data.session?.user || null } }));
+        if (!authUser) return null;
+
+        // 1. Try to get existing profile
+        const { data: profile } = await supabase
+            .from('baiyezhan_users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+
+        if (profile) return profile as User;
+
+        // 2. Self-Healing: Profile missing (likely DB reset), recreate it from Auth Metadata
+        console.log("Profile missing for authenticated user. Attempting self-healing...");
+        const charName = authUser.user_metadata?.character_name || 'Commander';
+
+        const { data: newProfile, error } = await supabase
+            .from('baiyezhan_users')
+            .insert({
+                id: authUser.id,
+                email: authUser.email!,
+                character_name: charName
+            })
+            .select()
+            .single();
+
+        if (error) {
+            console.error("Self-healing failed:", error);
+            // Fallback: Return a constructed user object so UI doesn't crash, 
+            // but DB ops requiring FK will still fail. 
+            // Better to likely force logout or let the error surface later.
+            return {
+                id: authUser.id,
+                email: authUser.email!,
+                character_name: charName
+            };
+        }
+
+        return newProfile as User;
     },
 
     register: async (email: string, password: string, charName: string) => {
@@ -60,7 +97,16 @@ export const SupabaseService = {
     },
 
     // Rooms
-    createRoom: async (ownerId: string, name: string): Promise<RoomData> => {
+    getRooms: async (): Promise<Room[]> => {
+        const { data } = await supabase
+            .from('baiyezhan_rooms')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(20);
+        return (data as unknown as Room[]) || [];
+    },
+
+    createRoom: async (ownerId: string, name: string, roomType: string): Promise<RoomData> => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         // 1. Create Room
@@ -69,6 +115,8 @@ export const SupabaseService = {
             .insert({
                 owner_id: ownerId,
                 room_code: roomCode,
+                name: name,
+                room_type: roomType,
                 round_duration: 80,
                 broadcast_interval: 10
             })

@@ -25,7 +25,7 @@ export function useBroadcastEngine(
     config: BroadcastConfig,
     myOrderIndex?: number
 ): BroadcastState {
-    const [now, setNow] = useState(Date.now());
+    const [now, setNow] = useState(() => Date.now());
 
     // High-frequency update loop
     useEffect(() => {

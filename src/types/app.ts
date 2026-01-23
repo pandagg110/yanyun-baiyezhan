@@ -15,6 +15,8 @@ export interface User {
 export interface Room {
     id: string;
     room_code: string;
+    name: string; // NEW
+    room_type: string; // NEW
     owner_id: string;
     round_duration: number; // default 80
     broadcast_interval: number; // default 10
