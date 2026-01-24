@@ -9,7 +9,7 @@ import { RoomData } from "@/types/app"; // Assuming RoomData is exported
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Settings, X } from "lucide-react";
+import { Settings, X, VolumeX } from "lucide-react";
 
 export default function RoomPage() {
     const params = useParams();
@@ -22,6 +22,7 @@ export default function RoomPage() {
     const [lastPoll, setLastPoll] = useState(Date.now());
     const [hotkey, setHotkey] = useState("Control");
     const [isRebinding, setIsRebinding] = useState(false);
+    const [audioBlocked, setAudioBlocked] = useState(false);
 
     // Load Hotkey
     useEffect(() => {
@@ -147,8 +148,16 @@ export default function RoomPage() {
                 audioInstanceRef.current.currentTime = 0;
                 audioInstanceRef.current.loop = isManualMode; // Loop if manual mode
                 audioInstanceRef.current.play()
-                    .then(() => console.log("Audio playing"))
-                    .catch(e => console.error("Audio play failed:", e));
+                    .then(() => {
+                        console.log("Audio playing");
+                        setAudioBlocked(false);
+                    })
+                    .catch(e => {
+                        console.error("Audio play failed:", e);
+                        if (e.name === 'NotAllowedError') {
+                            setAudioBlocked(true);
+                        }
+                    });
             } else {
                 console.warn("No audio source set");
             }
@@ -211,6 +220,17 @@ export default function RoomPage() {
         if (confirm("确定要退出房间吗？")) {
             await SupabaseService.leaveRoom(roomId, userId);
             router.push("/hall");
+        }
+    };
+
+    const enableAudio = () => {
+        if (audioInstanceRef.current) {
+            // Play and immediately pause to unlock AudioContext
+            audioInstanceRef.current.play().then(() => {
+                audioInstanceRef.current?.pause();
+                if (audioInstanceRef.current) audioInstanceRef.current.currentTime = 0;
+                setAudioBlocked(false);
+            }).catch(console.error);
         }
     };
 
@@ -311,6 +331,20 @@ export default function RoomPage() {
                     </PixelButton>
                 </div>
             </header>
+
+            {/* Audio Blocked Warning */}
+            {audioBlocked && (
+                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+                    <PixelButton
+                        variant="danger"
+                        onClick={enableAudio}
+                        className="flex items-center gap-2 bg-red-500 text-white shadow-[4px_4px_0_0_#000]"
+                    >
+                        <VolumeX className="w-4 h-4" />
+                        <span>点击开启声音 (AUTOPLAY BLOCKED)</span>
+                    </PixelButton>
+                </div>
+            )}
 
             {/* Settings Modal */}
             {showSettings && data && (
@@ -451,12 +485,17 @@ export default function RoomPage() {
 
                             {/* Big Text Display */}
                             {currentAssignee ? (
-                                <div className={cn(
-                                    "text-4xl md:text-5xl font-bold mb-4 break-all px-4",
-                                    engine.isMyTurn ? "text-white drop-shadow-md" : "text-yellow-400"
-                                )}>
-                                    {engine.isMyTurn ? "轮到你了！" : currentAssignee.user?.character_name || "未知"}
-                                </div>
+                                <>
+                                    <div className={cn(
+                                        "text-4xl md:text-5xl font-bold mb-2 break-all px-4",
+                                        engine.isMyTurn ? "text-white drop-shadow-md" : "text-yellow-400"
+                                    )}>
+                                        {engine.isMyTurn ? "轮到你了！" : currentAssignee.user?.character_name || "未知"}
+                                    </div>
+                                    <div className="text-sm font-mono text-neutral-500 mb-4">
+                                        [ 第 {engine.currentTick + 1} 位 ]
+                                    </div>
+                                </>
                             ) : (
                                 <div className="text-3xl text-neutral-500 mb-4">冷却中</div>
                             )}
