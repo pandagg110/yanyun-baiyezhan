@@ -23,13 +23,14 @@ export interface BroadcastState {
 export function useBroadcastEngine(
     startTime: number | null, // timestamp in ms. null means not running.
     config: BroadcastConfig,
-    myOrderIndex?: number
+    myOrderIndex?: number,
+    mode: 'auto' | 'manual' = 'auto'
 ): BroadcastState {
     const [now, setNow] = useState(() => Date.now());
 
     // High-frequency update loop
     useEffect(() => {
-        if (!startTime) return;
+        if (startTime === null) return;
 
         const intervalId = setInterval(() => {
             setNow(Date.now());
@@ -38,7 +39,8 @@ export function useBroadcastEngine(
         return () => clearInterval(intervalId);
     }, [startTime]);
 
-    if (!startTime) {
+    console.log("Hooks Debug:", { startTime, mode });
+    if (startTime === null) {
         return {
             currentTick: 0,
             currentAssigneeIndex: null,
@@ -54,35 +56,49 @@ export function useBroadcastEngine(
     const elapsedSeconds = elapsedMs / 1000;
     const roundDuration = config.roundDuration;
 
-    // Calculate Round Status & Loop logic
-    // PRD: "round_start_time += round_duration" implies infinite looping.
-    // We can simulate this by modulo if we want continuous loops, 
-    // or we can handle just one loop and let the parent component update the "startTime" for the next round.
-    // PRD A: "elapsed >= round_duration -> round_start_time += round_duration" -> This suggests the SERVER time updates? 
-    // OR the client treats it as a modulus.
-    // "Local Deduction" implies we should treat it as (TotalElapsed % RoundDuration).
+    // --- LOGIC BRANCHING ---
+    let tick: number;
+    let nextTickIn: number;
+    let intervalProgress: number;
+    let isCooldown: boolean;
 
-    // However, PRD says "Truth Source: round_start_time ... unless owner resets".
-    // And "Auto enter next round".
-    // So effective local elapsed = (TotalElapsed % RoundDuration).
+    if (mode === 'manual') {
+        // MANUAL MODE
+        // Tick is controlled by server via 'round_start_time' column (overloaded).
+        // startTime is the raw value from that column.
+        tick = startTime ?? 0;
+        isCooldown = tick >= config.memberCount;
 
-    const currentRoundElapsed = elapsedSeconds % roundDuration;
-    const tick = Math.floor(currentRoundElapsed / config.broadcastInterval);
+        // In manual mode, progress can be just visual or based on some timeout if we had one.
+        // For now let's just make it full or pulsating? 
+        // Let's just set it to 100% to show active.
+        intervalProgress = 1;
+        nextTickIn = 0;
 
-    const isCooldown = tick >= config.memberCount;
+    } else {
+        // AUTO MODE (Legacy)
+        const currentRoundElapsed = elapsedSeconds % roundDuration;
+        tick = Math.floor(currentRoundElapsed / config.broadcastInterval);
+        isCooldown = tick >= config.memberCount;
 
-    // Calculate progress within current interval
-    const intervalProgress = (currentRoundElapsed % config.broadcastInterval) / config.broadcastInterval;
+        // Calculate progress within current interval
+        intervalProgress = (currentRoundElapsed % config.broadcastInterval) / config.broadcastInterval;
 
-    // Calculate time remaining in current tick
-    const nextTickIn = config.broadcastInterval - (currentRoundElapsed % config.broadcastInterval);
+        // Calculate time remaining in current tick
+        nextTickIn = config.broadcastInterval - (currentRoundElapsed % config.broadcastInterval);
+    }
+
+    // Safety clamp (though tick logic above handles it for auto)
+    if (isCooldown) {
+        // maybe visual feedback?
+    }
 
     return {
         currentTick: tick,
         currentAssigneeIndex: isCooldown ? null : tick, // If tick < memberCount, index is tick.
         roundStatus: 'ACTIVE', // Always active once started, until paused (startTime = null)
         progress: intervalProgress * 100,
-        elapsed: currentRoundElapsed,
+        elapsed: elapsedSeconds, // Only correct for auto really, but useful for debug
         isMyTurn: myOrderIndex !== undefined && tick === myOrderIndex && !isCooldown,
         nextTickIn,
     };

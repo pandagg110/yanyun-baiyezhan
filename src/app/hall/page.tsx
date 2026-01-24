@@ -369,7 +369,7 @@ export default function HallPage() {
                                         )}
                                         {/* Badge */}
                                         <div className="absolute top-2 right-2 bg-black/80 px-2 py-0.5 text-[10px] text-yellow-500 font-bold border border-yellow-500/50 backdrop-blur-sm">
-                                            {room.room_type === 'healer' ? 'HEALER' : room.room_type === 'tank' ? 'TANK' : 'DPS'}
+                                            {room.room_type === 'healer' ? '霖霖大王' : '无名小弟'}
                                         </div>
                                     </div>
 

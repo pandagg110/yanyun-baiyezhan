@@ -239,7 +239,55 @@ export const SupabaseService = {
         const { data: room } = await supabase.from('baiyezhan_rooms').select('*').eq('id', roomId).single();
         if (!room) return null;
 
-        const { data: state } = await supabase.from('baiyezhan_room_state').select('*').eq('room_id', roomId).single();
+        const { data: state, error: stateError } = await supabase
+            .from('baiyezhan_room_state')
+            .select('*')
+            .eq('room_id', roomId)
+            .single();
+
+        if (stateError) {
+            console.error("Failed to fetch room state:", stateError);
+            // Self-healing: If state is missing (PGRST116), create it.
+            if (stateError.code === 'PGRST116') {
+                console.log("State missing for room, attempting self-healing...");
+                const { data: newState, error: createError } = await supabase
+                    .from('baiyezhan_room_state')
+                    .insert({
+                        room_id: roomId,
+                        round_start_time: null,
+                        is_running: false
+                    })
+                    .select()
+                    .single();
+
+                if (createError) {
+                    console.error("Self-healing failed:", createError);
+                    return null;
+                }
+                // Use the newly created state
+                // We need to re-assign 'state' but it's const, so we handle it by returning early with new data?
+                // Or we can just let the flow continue if we can assign it.
+                // Since 'state' is const, we can't reassign. 
+                // Let's refactor to let 'state' be mutable or handle it differently.
+
+                // Actually, simpler to just return here?
+                // We still need 'members'. 
+                const { data: members } = await supabase
+                    .from('baiyezhan_room_members')
+                    .select('*, user:baiyezhan_users(*)')
+                    .eq('room_id', roomId);
+
+                return {
+                    room,
+                    state: newState,
+                    members: members?.map(m => ({
+                        ...m,
+                        user: m.user
+                    })) || []
+                } as unknown as RoomData;
+            }
+            return null;
+        }
         const { data: members } = await supabase
             .from('baiyezhan_room_members')
             .select('*, user:baiyezhan_users(*)') // Join with users
@@ -269,22 +317,59 @@ export const SupabaseService = {
             round_start_time: null
         }).eq('room_id', roomId);
     },
-    uploadFile: async (file: File, bucket: 'sounds' | 'image'): Promise<string> => {
+
+    nextTurn: async (roomId: string, nextTick: number): Promise<void> => {
+        // In Manual Mode, we reuse 'round_start_time' to store the integer TICK
+        // This avoids adding a new column to the DBSchema.
+        const { error } = await supabase.from('baiyezhan_room_state').update({
+            round_start_time: nextTick,
+            is_running: true // Ensure it's marked accurate
+        }).eq('room_id', roomId);
+
+        if (error) throw error;
+    },
+    uploadFile: async (file: File, folder: 'sounds' | 'image'): Promise<string> => {
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-        const filePath = `${bucket}/${fileName}`;
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${folder}/${fileName}`; // Use folder structure
 
         const { error: uploadError } = await supabase.storage
-            .from('baiyezhan')
+            .from('baiyezhan') // Hardcoded single bucket
             .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+            throw uploadError;
+        }
 
-        const { data: { publicUrl } } = supabase.storage
-            .from('baiyezhan')
-            .getPublicUrl(filePath);
+        const { data } = supabase.storage.from('baiyezhan').getPublicUrl(filePath);
+        return data.publicUrl;
+    },
 
-        return publicUrl;
+    // HEARTBEAT SYSTEM
+    sendHeartbeat: async (roomId: string, userId: string): Promise<void> => {
+        await supabase
+            .from('baiyezhan_room_members')
+            .update({ last_seen: new Date().toISOString() })
+            .eq('room_id', roomId)
+            .eq('user_id', userId);
+    },
+
+    cleanupInactiveMembers: async (roomId: string, timeoutIds: string[] = []): Promise<void> => {
+        // We delete members who haven't updated last_seen in > 30 seconds
+        // Note: This requires Supabase to support delete with filter on timestamp.
+
+        // Calculate cutoff time (30 seconds ago)
+        const cutoff = new Date(Date.now() - 30 * 1000).toISOString();
+
+        const { error } = await supabase
+            .from('baiyezhan_room_members')
+            .delete()
+            .eq('room_id', roomId)
+            .lt('last_seen', cutoff);
+
+        if (error) {
+            console.error("Cleanup failed:", error);
+        }
     },
 
     updateRoomConfig: async (roomId: string, config: { roundDuration?: number, broadcastInterval?: number, bgmTrack?: string, coverImage?: string, name?: string }) => {
