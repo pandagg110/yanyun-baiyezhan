@@ -20,6 +20,8 @@ export interface Room {
     owner_id: string;
     round_duration: number; // default 80
     broadcast_interval: number; // default 10
+    bgm_track?: string;
+    cover_image?: string;
     created_at?: string;
 }
 

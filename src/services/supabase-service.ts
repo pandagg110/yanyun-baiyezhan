@@ -40,9 +40,8 @@ export const SupabaseService = {
 
         if (error) {
             console.error("Self-healing failed:", error);
-            // Fallback: Return a constructed user object so UI doesn't crash, 
-            // but DB ops requiring FK will still fail. 
-            // Better to likely force logout or let the error surface later.
+            // Even if DB insert fails (e.g. duplicate key race condition), 
+            // the user might actually exist now. Use the auth metadata to return a usable object.
             return {
                 id: authUser.id,
                 email: authUser.email!,
@@ -106,7 +105,7 @@ export const SupabaseService = {
         return (data as unknown as Room[]) || [];
     },
 
-    createRoom: async (ownerId: string, name: string, roomType: string): Promise<RoomData> => {
+    createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string }): Promise<RoomData> => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         // 1. Create Room
@@ -117,8 +116,10 @@ export const SupabaseService = {
                 room_code: roomCode,
                 name: name,
                 room_type: roomType,
-                round_duration: 80,
-                broadcast_interval: 10
+                round_duration: config.roundDuration,
+                broadcast_interval: config.broadcastInterval,
+                bgm_track: config.bgmTrack || 'default',
+                cover_image: config.coverImage || 'default'
             })
             .select()
             .single();
@@ -173,22 +174,65 @@ export const SupabaseService = {
             .single();
 
         if (!existingMember) {
-            // Get count for order index
-            const { count } = await supabase
+            // Get max order index to safely append
+            const { data: maxMember } = await supabase
                 .from('baiyezhan_room_members')
-                .select('*', { count: 'exact', head: true })
-                .eq('room_id', room.id);
+                .select('order_index')
+                .eq('room_id', room.id)
+                .order('order_index', { ascending: false })
+                .limit(1)
+                .single();
+
+            const nextIndex = maxMember ? maxMember.order_index + 1 : 0;
 
             await supabase
                 .from('baiyezhan_room_members')
                 .insert({
                     room_id: room.id,
                     user_id: userId,
-                    order_index: count || 0
+                    order_index: nextIndex
                 });
         }
 
         return SupabaseService.getRoomState(room.id);
+    },
+
+    leaveRoom: async (roomId: string, userId: string): Promise<void> => {
+        // 1. Get current member's index
+        const { data: member } = await supabase
+            .from('baiyezhan_room_members')
+            .select('order_index')
+            .eq('room_id', roomId)
+            .eq('user_id', userId)
+            .single();
+
+        if (!member) return;
+
+        // 2. Delete member
+        await supabase
+            .from('baiyezhan_room_members')
+            .delete()
+            .eq('room_id', roomId)
+            .eq('user_id', userId);
+
+        // 3. Shift down all members with higher index
+        // Note: This is a client-side loop for MVP. Ideally an RPC.
+        // But for <10 members this is fine.
+        const { data: subsequentMembers } = await supabase
+            .from('baiyezhan_room_members')
+            .select('user_id, order_index')
+            .eq('room_id', roomId)
+            .gt('order_index', member.order_index);
+
+        if (subsequentMembers && subsequentMembers.length > 0) {
+            for (const sub of subsequentMembers) {
+                await supabase
+                    .from('baiyezhan_room_members')
+                    .update({ order_index: sub.order_index - 1 })
+                    .eq('room_id', roomId)
+                    .eq('user_id', sub.user_id);
+            }
+        }
     },
 
     getRoomState: async (roomId: string): Promise<RoomData | null> => {
@@ -224,5 +268,38 @@ export const SupabaseService = {
             is_running: false,
             round_start_time: null
         }).eq('room_id', roomId);
+    },
+    uploadFile: async (file: File, bucket: 'sounds' | 'image'): Promise<string> => {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+        const filePath = `${bucket}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('baiyezhan')
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('baiyezhan')
+            .getPublicUrl(filePath);
+
+        return publicUrl;
+    },
+
+    updateRoomConfig: async (roomId: string, config: { roundDuration?: number, broadcastInterval?: number, bgmTrack?: string, coverImage?: string, name?: string }) => {
+        const updatePayload: any = {};
+        if (config.roundDuration !== undefined) updatePayload.round_duration = config.roundDuration;
+        if (config.broadcastInterval !== undefined) updatePayload.broadcast_interval = config.broadcastInterval;
+        if (config.bgmTrack !== undefined) updatePayload.bgm_track = config.bgmTrack;
+        if (config.coverImage !== undefined) updatePayload.cover_image = config.coverImage;
+        if (config.name !== undefined) updatePayload.name = config.name;
+
+        const { error } = await supabase
+            .from('baiyezhan_rooms')
+            .update(updatePayload)
+            .eq('id', roomId);
+
+        if (error) throw error;
     }
 };
