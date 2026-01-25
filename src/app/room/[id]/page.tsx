@@ -9,7 +9,7 @@ import { RoomData } from "@/types/app"; // Assuming RoomData is exported
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Settings, X, VolumeX } from "lucide-react";
+import { Settings, X, VolumeX, Play, Square } from "lucide-react";
 
 export default function RoomPage() {
     const params = useParams();
@@ -23,6 +23,7 @@ export default function RoomPage() {
     const [hotkey, setHotkey] = useState("Control");
     const [isRebinding, setIsRebinding] = useState(false);
     const [audioBlocked, setAudioBlocked] = useState(false);
+    const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
 
     // Load Hotkey
     useEffect(() => {
@@ -139,36 +140,44 @@ export default function RoomPage() {
         };
     }, []);
 
+    // Helper for safe playback
+    const playAudioSafe = async (audio: HTMLAudioElement) => {
+        try {
+            await audio.play();
+            setAudioBlocked(false);
+        } catch (e: any) {
+            if (e.name === 'AbortError') {
+                // Expected interruption, ignore
+                console.log("Audio play aborted (harmless)");
+            } else if (e.name === 'NotAllowedError') {
+                console.error("Audio blocked by browser policy");
+                setAudioBlocked(true);
+            } else {
+                console.error("Audio playback error:", e);
+            }
+        }
+    };
+
     // Handle Playback
     useEffect(() => {
+        const audio = audioInstanceRef.current;
+        if (!audio) return;
+
         // Detect rising edge of isMyTurn
         if (engine.isMyTurn && !wasMyTurnRef.current) {
             console.log("Turn started! Playing audio...");
-            if (audioInstanceRef.current && audioInstanceRef.current.src) {
-                audioInstanceRef.current.currentTime = 0;
-                audioInstanceRef.current.loop = isManualMode; // Loop if manual mode
-                audioInstanceRef.current.play()
-                    .then(() => {
-                        console.log("Audio playing");
-                        setAudioBlocked(false);
-                    })
-                    .catch(e => {
-                        console.error("Audio play failed:", e);
-                        if (e.name === 'NotAllowedError') {
-                            setAudioBlocked(true);
-                        }
-                    });
-            } else {
-                console.warn("No audio source set");
-            }
+            audio.currentTime = 0;
+            audio.loop = isManualMode;
+            playAudioSafe(audio);
         }
 
         // Detect falling edge (turn ended)
         if (!engine.isMyTurn && wasMyTurnRef.current) {
-            if (audioInstanceRef.current) {
-                audioInstanceRef.current.pause();
-                audioInstanceRef.current.currentTime = 0;
-            }
+            // We only pause if we are NOT in the middle of a play promise (hard to track exact promise state reliably)
+            // But usually just calling pause() is what causes AbortError if pending.
+            // Since we catch AbortError in playAudioSafe, it's safe to call pause() here.
+            audio.pause();
+            audio.currentTime = 0;
         }
 
         wasMyTurnRef.current = engine.isMyTurn;
@@ -289,6 +298,47 @@ export default function RoomPage() {
         }
     }, [isManualMode, engine.isMyTurn, handlePassTurn]);
 
+    // Preview Logic
+    const togglePreview = async (url: string) => {
+        if (previewAudio) {
+            previewAudio.pause();
+            setPreviewAudio(null);
+            return;
+        }
+
+        if (url === 'default') return;
+
+        const audio = new Audio(url);
+        audio.onended = () => setPreviewAudio(null);
+        setPreviewAudio(audio); // Update UI immediately
+
+        try {
+            await audio.play();
+        } catch (e: any) {
+            if (e.name === 'AbortError') {
+                // User likely clicked stop immediately
+                return;
+            }
+            if (e.name === 'NotAllowedError') {
+                alert("无法自动播放，请检查浏览器权限");
+            }
+            console.error("Preview failed:", e);
+            setPreviewAudio(null); // Revert UI on error
+        }
+    };
+
+    // Stop preview on unmount or modal close
+    useEffect(() => {
+        return () => {
+            // Cleanup function
+            if (previewAudio) {
+                previewAudio.pause();
+            }
+        };
+    }, [previewAudio]);
+
+
+
     if (!data || !userId) return <div className="p-10 text-center text-white font-pixel">正在获取信号频率...</div>;
 
     // Current Assignee
@@ -296,6 +346,9 @@ export default function RoomPage() {
         engine.currentAssigneeIndex !== null
             ? data.members.find(m => m.order_index === engine.currentTick)
             : null;
+
+
+
 
     return (
         <main className="flex min-h-screen flex-col bg-neutral-900 text-white pb-20">
@@ -315,6 +368,16 @@ export default function RoomPage() {
                     )}
                 </div>
                 <div className="flex gap-2 min-w-40 justify-end">
+                    {data.room.bgm_track && data.room.bgm_track !== 'default' && (
+                        <PixelButton
+                            variant="primary"
+                            className={cn("px-3 py-1 text-xs flex items-center gap-2", previewAudio ? "animate-pulse border-green-500 text-green-400" : "")}
+                            onClick={() => togglePreview(data.room.bgm_track!)}
+                        >
+                            {previewAudio ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                            {previewAudio ? "停止试听" : "试听声音"}
+                        </PixelButton>
+                    )}
                     <PixelButton variant="secondary" className="px-3 py-1 text-xs" onClick={handleCopyCode}>
                         复制房间码
                     </PixelButton>
@@ -420,8 +483,17 @@ export default function RoomPage() {
                                             点击上传
                                         </div>
                                     </div>
-                                    <div className="text-[10px] text-neutral-600 truncate px-1">
-                                        当前: {data.room.bgm_track === 'default' ? '默认' : '自定义'}
+                                    <div className="text-[10px] text-neutral-600 truncate px-1 flex items-center justify-between">
+                                        <span>当前: {data.room.bgm_track === 'default' ? '默认' : '自定义'}</span>
+                                        {data.room.bgm_track && data.room.bgm_track !== 'default' && (
+                                            <button
+                                                onClick={() => togglePreview(data.room.bgm_track!)}
+                                                className="text-yellow-500 hover:text-white"
+                                                title="试听"
+                                            >
+                                                {previewAudio ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
