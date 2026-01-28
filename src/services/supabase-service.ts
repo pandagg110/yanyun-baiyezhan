@@ -198,41 +198,15 @@ export const SupabaseService = {
     },
 
     leaveRoom: async (roomId: string, userId: string): Promise<void> => {
-        // 1. Get current member's index
-        const { data: member } = await supabase
-            .from('baiyezhan_room_members')
-            .select('order_index')
-            .eq('room_id', roomId)
-            .eq('user_id', userId)
-            .single();
-
-        if (!member) return;
-
-        // 2. Delete member
+        // 1. Delete member
         await supabase
             .from('baiyezhan_room_members')
             .delete()
             .eq('room_id', roomId)
             .eq('user_id', userId);
 
-        // 3. Shift down all members with higher index
-        // Note: This is a client-side loop for MVP. Ideally an RPC.
-        // But for <10 members this is fine.
-        const { data: subsequentMembers } = await supabase
-            .from('baiyezhan_room_members')
-            .select('user_id, order_index')
-            .eq('room_id', roomId)
-            .gt('order_index', member.order_index);
-
-        if (subsequentMembers && subsequentMembers.length > 0) {
-            for (const sub of subsequentMembers) {
-                await supabase
-                    .from('baiyezhan_room_members')
-                    .update({ order_index: sub.order_index - 1 })
-                    .eq('room_id', roomId)
-                    .eq('user_id', sub.user_id);
-            }
-        }
+        // 2. Atomic reorder via RPC (replaces client-side loop)
+        await supabase.rpc('reorder_room_members', { p_room_id: roomId });
     },
 
     getRoomState: async (roomId: string): Promise<RoomData | null> => {
@@ -355,20 +329,28 @@ export const SupabaseService = {
     },
 
     cleanupInactiveMembers: async (roomId: string, timeoutIds: string[] = []): Promise<void> => {
-        // We delete members who haven't updated last_seen in > 30 seconds
-        // Note: This requires Supabase to support delete with filter on timestamp.
+        // We delete members who haven't updated last_seen in > 120 seconds (2 minutes)
+        // Increased from 30s to handle network fluctuations better
 
-        // Calculate cutoff time (30 seconds ago)
-        const cutoff = new Date(Date.now() - 30 * 1000).toISOString();
+        // Calculate cutoff time (120 seconds ago)
+        const cutoff = new Date(Date.now() - 120 * 1000).toISOString();
 
-        const { error } = await supabase
+        const { data: deleted, error } = await supabase
             .from('baiyezhan_room_members')
             .delete()
             .eq('room_id', roomId)
-            .lt('last_seen', cutoff);
+            .lt('last_seen', cutoff)
+            .select('user_id');  // Return deleted rows to check if any were removed
 
         if (error) {
             console.error("Cleanup failed:", error);
+            return;
+        }
+
+        // Only reorder if we actually deleted someone
+        if (deleted && deleted.length > 0) {
+            console.log(`Cleaned up ${deleted.length} inactive member(s), reordering...`);
+            await supabase.rpc('reorder_room_members', { p_room_id: roomId });
         }
     },
 

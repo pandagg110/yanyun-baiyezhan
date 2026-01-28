@@ -127,35 +127,60 @@ export default function RoomPage() {
     // Audio Logic
     const audioInstanceRef = useRef<HTMLAudioElement | null>(null);
     const wasMyTurnRef = useRef(false);
+    const DEFAULT_AUDIO_SRC = '/sounds/default-alert.mp3';
 
-    // Initialize Audio Object
+    // Initialize Audio Object with default source
     useEffect(() => {
         // Create detached audio element
         const audio = new Audio();
         audio.preload = 'auto';
+        // Set default source immediately to ensure audio is always ready
+        audio.src = DEFAULT_AUDIO_SRC;
         audioInstanceRef.current = audio;
 
         return () => {
-            audioInstanceRef.current = null;
+            if (audioInstanceRef.current) {
+                audioInstanceRef.current.pause();
+                audioInstanceRef.current = null;
+            }
         };
     }, []);
 
-    // Helper for safe playback
-    const playAudioSafe = async (audio: HTMLAudioElement) => {
-        try {
-            await audio.play();
-            setAudioBlocked(false);
-        } catch (e: any) {
-            if (e.name === 'AbortError') {
-                // Expected interruption, ignore
-                console.log("Audio play aborted (harmless)");
-            } else if (e.name === 'NotAllowedError') {
-                console.error("Audio blocked by browser policy");
-                setAudioBlocked(true);
-            } else {
-                console.error("Audio playback error:", e);
+    // Helper for safe playback with retry mechanism
+    const playAudioSafe = async (audio: HTMLAudioElement, retries = 3) => {
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                // Ensure audio source is set
+                if (!audio.src || audio.src === window.location.href) {
+                    console.warn("Audio source not set, using default");
+                    audio.src = DEFAULT_AUDIO_SRC;
+                    audio.load();
+                }
+
+                await audio.play();
+                setAudioBlocked(false);
+                console.log("Audio playing successfully");
+                return true;
+            } catch (e: any) {
+                if (e.name === 'AbortError') {
+                    // Expected interruption, ignore
+                    console.log("Audio play aborted (harmless)");
+                    return false;
+                } else if (e.name === 'NotAllowedError') {
+                    console.error("Audio blocked by browser policy");
+                    setAudioBlocked(true);
+                    return false;
+                } else {
+                    console.error(`Audio playback error (attempt ${attempt + 1}/${retries}):`, e);
+                    // Wait a bit before retry
+                    if (attempt < retries - 1) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                }
             }
         }
+        console.error("Audio playback failed after all retries");
+        return false;
     };
 
     // Handle Playback
@@ -183,15 +208,21 @@ export default function RoomPage() {
         wasMyTurnRef.current = engine.isMyTurn;
     }, [engine.isMyTurn, isManualMode]);
 
-    // Update Audio Source when config changes
+    // Update Audio Source when config changes (with fallback to default)
     useEffect(() => {
         const audio = audioInstanceRef.current;
-        if (audio && data?.room.bgm_track && data.room.bgm_track !== 'default') {
-            // Only update if changed to avoid reloading
-            if (audio.src !== data.room.bgm_track) {
-                audio.src = data.room.bgm_track;
-                audio.load();
-            }
+        if (!audio) return;
+
+        // Determine the source to use
+        const newSrc = (data?.room.bgm_track && data.room.bgm_track !== 'default')
+            ? data.room.bgm_track
+            : DEFAULT_AUDIO_SRC;
+
+        // Only update if actually changed
+        if (audio.src !== newSrc) {
+            console.log("Updating audio source to:", newSrc);
+            audio.src = newSrc;
+            audio.load();
         }
     }, [data?.room.bgm_track]);
 
