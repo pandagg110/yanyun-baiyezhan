@@ -216,6 +216,48 @@ export const SupabaseService = {
         await supabase.rpc('reorder_room_members', { p_room_id: roomId });
     },
 
+    /**
+     * Kick a member from a room (VIP/Admin only)
+     */
+    kickMember: async (roomId: string, targetUserId: string): Promise<void> => {
+        const user = await SupabaseService.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        // Only VIP and Admin can kick
+        if (user.role !== 'vip' && user.role !== 'admin') {
+            throw new Error('Permission denied');
+        }
+
+        // Cannot kick yourself
+        if (user.id === targetUserId) {
+            throw new Error('Cannot kick yourself');
+        }
+
+        // Delete the member
+        await supabase
+            .from('baiyezhan_room_members')
+            .delete()
+            .eq('room_id', roomId)
+            .eq('user_id', targetUserId);
+
+        // Reorder remaining members
+        await supabase.rpc('reorder_room_members', { p_room_id: roomId });
+    },
+
+    /**
+     * Check if a user is still a member of a room
+     */
+    isInRoom: async (roomId: string, userId: string): Promise<boolean> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_room_members')
+            .select('user_id')
+            .eq('room_id', roomId)
+            .eq('user_id', userId)
+            .single();
+
+        return !!data && !error;
+    },
+
     getRoomState: async (roomId: string): Promise<RoomData | null> => {
         const { data: room } = await supabase.from('baiyezhan_rooms').select('*').eq('id', roomId).single();
         if (!room) return null;

@@ -11,7 +11,8 @@ export const MockService = {
         return {
             id: "mock-user-" + Math.random().toString(36).substr(2, 9),
             email,
-            character_name: characterName
+            character_name: characterName,
+            role: 'user'
         };
     },
 
@@ -42,7 +43,7 @@ export const MockService = {
             room_id: roomId,
             user_id: ownerId,
             order_index: 0,
-            user: { id: ownerId, email: "owner@test.com", character_name: "MockOwner" }
+            user: { id: ownerId, email: "owner@test.com", character_name: "MockOwner", role: 'user' }
         }];
 
         // Store in local storage to simulate "server" state for join
@@ -66,7 +67,7 @@ export const MockService = {
                 room_id: roomData.room.id,
                 user_id: userId,
                 order_index: roomData.members.length,
-                user: { id: userId, email: "joiner@test.com", character_name: "MockJoiner" }
+                user: { id: userId, email: "joiner@test.com", character_name: "MockJoiner", role: 'user' }
             });
             localStorage.setItem('mock_db', JSON.stringify(mockDb));
         }

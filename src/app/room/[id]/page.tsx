@@ -113,6 +113,19 @@ export default function RoomPage() {
     const myMember = data?.members.find((m) => m.user_id === userId);
     const amIOwner = data?.room.owner_id === userId;
     const canEdit = userRole === 'admin' || userRole === 'vip' || amIOwner;
+    const canKick = userRole === 'admin' || userRole === 'vip';
+
+    // Kick Detection - redirect if user is no longer in the room
+    useEffect(() => {
+        if (!roomId || !userId || !data) return;
+
+        // Check if current user is still in the member list
+        const stillInRoom = data.members.some(m => m.user_id === userId);
+        if (!stillInRoom) {
+            alert("你已被移出房间");
+            router.push("/hall");
+        }
+    }, [data, userId, roomId, router]);
 
     // Broadcast Engine
     const isManualMode = data?.room.room_type === 'healer'; // Linlin King is Manual
@@ -731,7 +744,26 @@ export default function RoomPage() {
                                         {m.user?.character_name} {isMe && "(你)"}
                                     </span>
                                 </div>
-                                {isActive && <span className="animate-blink text-xs text-yellow-500">行动中</span>}
+                                <div className="flex items-center gap-2">
+                                    {isActive && <span className="animate-blink text-xs text-yellow-500">行动中</span>}
+                                    {canKick && !isMe && (
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm(`确定要将 ${m.user?.character_name || '该用户'} 移出房间吗？`)) return;
+                                                try {
+                                                    await SupabaseService.kickMember(roomId, m.user_id);
+                                                    fetchData();
+                                                } catch (err: any) {
+                                                    alert("移出失败: " + (err.message || JSON.stringify(err)));
+                                                }
+                                            }}
+                                            className="text-red-500 hover:text-red-400 text-xs font-bold px-2 py-1 border border-red-500/50 hover:bg-red-500/20 transition-colors"
+                                            title="移出房间"
+                                        >
+                                            移出
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         );
                     })}
