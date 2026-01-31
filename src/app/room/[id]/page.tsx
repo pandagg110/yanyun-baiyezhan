@@ -5,7 +5,7 @@ import { PixelCard } from "@/components/pixel/pixel-card";
 import { useBroadcastEngine } from "@/hooks/use-broadcast-engine";
 import { SupabaseService } from "@/services/supabase-service";
 import { supabase } from "@/lib/supabase";
-import { RoomData } from "@/types/app"; // Assuming RoomData is exported
+import { RoomData, UserRole } from "@/types/app"; // Assuming RoomData is exported
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ export default function RoomPage() {
     const router = useRouter();
 
     const [userId, setUserId] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<UserRole>('user');
     const [data, setData] = useState<RoomData | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [lastPoll, setLastPoll] = useState(Date.now());
@@ -24,6 +25,7 @@ export default function RoomPage() {
     const [isRebinding, setIsRebinding] = useState(false);
     const [audioBlocked, setAudioBlocked] = useState(false);
     const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
+    const [editPassword, setEditPassword] = useState("");
 
     // Load Hotkey
     useEffect(() => {
@@ -39,6 +41,7 @@ export default function RoomPage() {
                 router.push("/login");
             } else {
                 setUserId(user.id);
+                setUserRole(user.role);
             }
         };
         checkUser();
@@ -109,6 +112,7 @@ export default function RoomPage() {
     // Derived State
     const myMember = data?.members.find((m) => m.user_id === userId);
     const amIOwner = data?.room.owner_id === userId;
+    const canEdit = userRole === 'admin' || userRole === 'vip' || amIOwner;
 
     // Broadcast Engine
     const isManualMode = data?.room.room_type === 'healer'; // Linlin King is Manual
@@ -412,9 +416,12 @@ export default function RoomPage() {
                     <PixelButton variant="secondary" className="px-3 py-1 text-xs" onClick={handleCopyCode}>
                         复制房间码
                     </PixelButton>
-                    {amIOwner && (
+                    {canEdit && (
                         <button
-                            onClick={() => setShowSettings(true)}
+                            onClick={() => {
+                                setEditPassword(data.room.password || "");
+                                setShowSettings(true);
+                            }}
                             className="bg-neutral-700 hover:bg-neutral-600 border-2 border-black p-1 active:translate-y-[2px]"
                         >
                             <Settings className="w-4 h-4 text-white" />
@@ -554,6 +561,37 @@ export default function RoomPage() {
                                     <div className="text-[10px] text-neutral-600 truncate px-1">
                                         当前: {data.room.cover_image === 'default' ? '默认' : '自定义'}
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Password Config */}
+                            <div className="space-y-2 pt-4 border-t border-neutral-700">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">房间密码</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="留空则无密码"
+                                        value={editPassword}
+                                        onChange={(e) => setEditPassword(e.target.value)}
+                                        className="flex-1 bg-neutral-800 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                    />
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await SupabaseService.updateRoomConfig(roomId, { password: editPassword || null });
+                                                fetchData();
+                                                alert(editPassword ? "密码已设置" : "密码已取消");
+                                            } catch (err: any) {
+                                                alert("保存失败: " + (err.message || JSON.stringify(err)));
+                                            }
+                                        }}
+                                        className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-4 py-2 text-sm border-2 border-black"
+                                    >
+                                        保存
+                                    </button>
+                                </div>
+                                <div className="text-[10px] text-neutral-600">
+                                    当前: {data.room.password ? '🔒 已设置密码' : '🔓 无密码'}
                                 </div>
                             </div>
                         </div>

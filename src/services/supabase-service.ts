@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Room, RoomData, RoomMember, RoomState, User } from "@/types/app";
+import { Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -45,7 +45,8 @@ export const SupabaseService = {
             return {
                 id: authUser.id,
                 email: authUser.email!,
-                character_name: charName
+                character_name: charName,
+                role: 'user' as const
             };
         }
 
@@ -105,7 +106,7 @@ export const SupabaseService = {
         return (data as unknown as Room[]) || [];
     },
 
-    createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string }): Promise<RoomData> => {
+    createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string, password?: string }): Promise<RoomData> => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         // 1. Create Room
@@ -119,7 +120,8 @@ export const SupabaseService = {
                 round_duration: config.roundDuration,
                 broadcast_interval: config.broadcastInterval,
                 bgm_track: config.bgmTrack || 'default',
-                cover_image: config.coverImage || 'default'
+                cover_image: config.coverImage || 'default',
+                password: config.password || null
             })
             .select()
             .single();
@@ -155,7 +157,7 @@ export const SupabaseService = {
         return { room, state, members: [member] } as unknown as RoomData;
     },
 
-    joinRoom: async (userId: string, roomCode: string): Promise<RoomData | null> => {
+    joinRoom: async (userId: string, roomCode: string, password?: string): Promise<RoomData | null> => {
         // 1. Find Room
         const { data: room, error: roomError } = await supabase
             .from('baiyezhan_rooms')
@@ -164,6 +166,11 @@ export const SupabaseService = {
             .single();
 
         if (roomError || !room) return null;
+
+        // 2. Validate password if room has one
+        if (room.password && room.password !== password) {
+            throw new Error('INVALID_PASSWORD');
+        }
 
         // 2. Check/Add Member
         const { data: existingMember } = await supabase
@@ -354,13 +361,14 @@ export const SupabaseService = {
         }
     },
 
-    updateRoomConfig: async (roomId: string, config: { roundDuration?: number, broadcastInterval?: number, bgmTrack?: string, coverImage?: string, name?: string }) => {
+    updateRoomConfig: async (roomId: string, config: { roundDuration?: number, broadcastInterval?: number, bgmTrack?: string, coverImage?: string, name?: string, password?: string | null }) => {
         const updatePayload: any = {};
         if (config.roundDuration !== undefined) updatePayload.round_duration = config.roundDuration;
         if (config.broadcastInterval !== undefined) updatePayload.broadcast_interval = config.broadcastInterval;
         if (config.bgmTrack !== undefined) updatePayload.bgm_track = config.bgmTrack;
         if (config.coverImage !== undefined) updatePayload.cover_image = config.coverImage;
         if (config.name !== undefined) updatePayload.name = config.name;
+        if (config.password !== undefined) updatePayload.password = config.password;
 
         const { error } = await supabase
             .from('baiyezhan_rooms')
@@ -368,5 +376,98 @@ export const SupabaseService = {
             .eq('id', roomId);
 
         if (error) throw error;
+    },
+
+    // ============ ROLE-BASED METHODS ============
+
+    /**
+     * Check if a user can create rooms based on their role
+     */
+    canCreateRoom: (role: UserRole): boolean => {
+        return role === 'admin' || role === 'vip';
+    },
+
+    /**
+     * Check if a user can delete a room
+     * Admin can delete any room, others cannot delete
+     */
+    canDeleteRoom: (role: UserRole, isOwner: boolean): boolean => {
+        return role === 'admin';
+    },
+
+    /**
+     * Check if a user can modify a room
+     * Admin can modify any, VIP can modify own rooms
+     */
+    canModifyRoom: (role: UserRole, isOwner: boolean): boolean => {
+        if (role === 'admin') return true;
+        if (role === 'vip' && isOwner) return true;
+        return false;
+    },
+
+    /**
+     * Delete a room and all related data
+     * Only admin can delete rooms
+     */
+    deleteRoom: async (roomId: string, userId: string): Promise<void> => {
+        // Get user role
+        const user = await SupabaseService.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        // Get room to check ownership
+        const { data: room } = await supabase
+            .from('baiyezhan_rooms')
+            .select('owner_id')
+            .eq('id', roomId)
+            .single();
+
+        if (!room) throw new Error('Room not found');
+
+        const isOwner = room.owner_id === userId;
+        if (!SupabaseService.canDeleteRoom(user.role, isOwner)) {
+            throw new Error('Permission denied');
+        }
+
+        // Delete in order: members -> state -> room
+        await supabase.from('baiyezhan_room_members').delete().eq('room_id', roomId);
+        await supabase.from('baiyezhan_room_state').delete().eq('room_id', roomId);
+        const { error } = await supabase.from('baiyezhan_rooms').delete().eq('id', roomId);
+
+        if (error) throw error;
+    },
+
+    // ============ ADMIN METHODS ============
+
+    /**
+     * Get all users (admin only)
+     */
+    getAllUsers: async (): Promise<User[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_users')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data as User[]) || [];
+    },
+
+    /**
+     * Update a user's role (admin only)
+     */
+    updateUserRole: async (targetUserId: string, newRole: UserRole): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_users')
+            .update({ role: newRole })
+            .eq('id', targetUserId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Check if current user is admin
+     */
+    isAdmin: async (): Promise<boolean> => {
+        const user = await SupabaseService.getUser();
+        return user?.role === 'admin';
     }
 };

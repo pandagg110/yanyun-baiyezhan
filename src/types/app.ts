@@ -6,10 +6,13 @@ export type Json =
     | { [key: string]: Json | undefined }
     | Json[]
 
+export type UserRole = 'user' | 'vip' | 'admin';
+
 export interface User {
     id: string;
     email: string;
     character_name: string;
+    role: UserRole;
 }
 
 export interface Room {
@@ -22,6 +25,7 @@ export interface Room {
     broadcast_interval: number; // default 10
     bgm_track?: string;
     cover_image?: string;
+    password?: string; // Optional room password
     created_at?: string;
 }
 
