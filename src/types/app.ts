@@ -15,12 +15,23 @@ export interface User {
     role: UserRole;
 }
 
+// 百业 (大房间)
+export interface Baiye {
+    id: string;
+    name: string;
+    description?: string;
+    cover_image?: string;
+    owner_id: string;
+    created_at?: string;
+}
+
 export interface Room {
     id: string;
     room_code: string;
-    name: string; // NEW
-    room_type: string; // NEW
+    name: string;
+    room_type: string;
     owner_id: string;
+    baiye_id?: string; // 所属百业
     round_duration: number; // default 80
     broadcast_interval: number; // default 10
     bgm_track?: string;

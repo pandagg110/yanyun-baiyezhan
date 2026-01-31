@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
+import { Baiye, Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -96,7 +96,136 @@ export const SupabaseService = {
         await supabase.auth.signOut();
     },
 
-    // Rooms
+    // ============ BAIYE (大房间) ============
+
+    /**
+     * Get all baiye (public list)
+     */
+    getBaiyeList: async (): Promise<Baiye[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_baiye')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data as Baiye[]) || [];
+    },
+
+    /**
+     * Get a single baiye by ID
+     */
+    getBaiye: async (baiyeId: string): Promise<Baiye | null> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_baiye')
+            .select('*')
+            .eq('id', baiyeId)
+            .single();
+
+        if (error) return null;
+        return data as Baiye;
+    },
+
+    /**
+     * Create a new baiye (VIP: max 1, Admin: unlimited)
+     */
+    createBaiye: async (ownerId: string, name: string, description?: string, coverImage?: string): Promise<Baiye> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_baiye')
+            .insert({
+                name,
+                description: description || null,
+                cover_image: coverImage || null,
+                owner_id: ownerId
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as Baiye;
+    },
+
+    /**
+     * Delete a baiye (Admin only, cascade deletes rooms)
+     */
+    deleteBaiye: async (baiyeId: string): Promise<void> => {
+        const user = await SupabaseService.getUser();
+        if (!user || user.role !== 'admin') {
+            throw new Error('Permission denied');
+        }
+
+        const { error } = await supabase
+            .from('baiyezhan_baiye')
+            .delete()
+            .eq('id', baiyeId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Get count of baiye owned by a user
+     */
+    getUserBaiyeCount: async (userId: string): Promise<number> => {
+        const { count, error } = await supabase
+            .from('baiyezhan_baiye')
+            .select('*', { count: 'exact', head: true })
+            .eq('owner_id', userId);
+
+        if (error) return 0;
+        return count || 0;
+    },
+
+    /**
+     * Get count of rooms owned by a user (across all baiye)
+     */
+    getUserRoomCount: async (userId: string): Promise<number> => {
+        const { count, error } = await supabase
+            .from('baiyezhan_rooms')
+            .select('*', { count: 'exact', head: true })
+            .eq('owner_id', userId);
+
+        if (error) return 0;
+        return count || 0;
+    },
+
+    /**
+     * Check if user can create a baiye
+     */
+    canCreateBaiye: async (role: UserRole, userId: string): Promise<boolean> => {
+        if (role === 'admin') return true;
+        if (role === 'vip') {
+            const count = await SupabaseService.getUserBaiyeCount(userId);
+            return count < 1;
+        }
+        return false;
+    },
+
+    /**
+     * Check if user can create a room (VIP: max 4 total)
+     */
+    canCreateRoomAsync: async (role: UserRole, userId: string): Promise<boolean> => {
+        if (role === 'admin') return true;
+        if (role === 'vip') {
+            const count = await SupabaseService.getUserRoomCount(userId);
+            return count < 4;
+        }
+        return false;
+    },
+
+    /**
+     * Get rooms by baiye ID
+     */
+    getRoomsByBaiye: async (baiyeId: string): Promise<Room[]> => {
+        const { data } = await supabase
+            .from('baiyezhan_rooms')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('created_at', { ascending: false });
+
+        return (data as Room[]) || [];
+    },
+
+    // ============ ROOMS (小房间) ============
+
     getRooms: async (): Promise<Room[]> => {
         const { data } = await supabase
             .from('baiyezhan_rooms')
@@ -106,7 +235,7 @@ export const SupabaseService = {
         return (data as unknown as Room[]) || [];
     },
 
-    createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string, password?: string }): Promise<RoomData> => {
+    createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string, password?: string, baiyeId?: string }): Promise<RoomData> => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         // 1. Create Room
@@ -121,7 +250,8 @@ export const SupabaseService = {
                 broadcast_interval: config.broadcastInterval,
                 bgm_track: config.bgmTrack || 'default',
                 cover_image: config.coverImage || 'default',
-                password: config.password || null
+                password: config.password || null,
+                baiye_id: config.baiyeId || null
             })
             .select()
             .single();

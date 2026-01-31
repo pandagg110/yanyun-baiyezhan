@@ -123,7 +123,8 @@ export default function RoomPage() {
         const stillInRoom = data.members.some(m => m.user_id === userId);
         if (!stillInRoom) {
             alert("你已被移出房间");
-            router.push("/hall");
+            const baiyeId = data.room.baiye_id;
+            router.push(baiyeId ? `/baiye/${baiyeId}/hall` : "/baiye");
         }
     }, [data, userId, roomId, router]);
 
@@ -275,8 +276,9 @@ export default function RoomPage() {
     const handleExit = async () => {
         if (!userId) return;
         if (confirm("确定要退出房间吗？")) {
+            const baiyeId = data?.room.baiye_id;
             await SupabaseService.leaveRoom(roomId, userId);
-            router.push("/hall");
+            router.push(baiyeId ? `/baiye/${baiyeId}/hall` : "/baiye");
         }
     };
 

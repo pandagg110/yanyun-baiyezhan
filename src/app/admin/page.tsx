@@ -36,7 +36,7 @@ export default function AdminPage() {
 
             if (user.role !== "admin") {
                 alert("无权访问管理页面");
-                router.push("/hall");
+                router.push("/baiye");
                 return;
             }
 
@@ -70,7 +70,7 @@ export default function AdminPage() {
 
             // If user removed self from admin, redirect
             if (userId === currentUser?.id && newRole !== "admin") {
-                router.push("/hall");
+                router.push("/baiye");
             }
         } catch (error: any) {
             alert("更新失败: " + (error.message || JSON.stringify(error)));
@@ -103,10 +103,10 @@ export default function AdminPage() {
                     </div>
                 </div>
                 <button
-                    onClick={() => router.push("/hall")}
+                    onClick={() => router.push("/baiye")}
                     className="text-blue-400 hover:text-blue-300 font-bold uppercase text-sm"
                 >
-                    [ 返回大厅 ]
+                    [ 返回百业列表 ]
                 </button>
             </div>
 

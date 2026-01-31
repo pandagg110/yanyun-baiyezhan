@@ -20,7 +20,7 @@ export default function LoginPage() {
         const checkSession = async () => {
             const { data: { session } } = await SupabaseService.getSession();
             if (session) {
-                router.push("/hall");
+                router.push("/baiye");
             }
         };
         checkSession();
@@ -38,7 +38,7 @@ export default function LoginPage() {
             } else {
                 await SupabaseService.login(email, password);
             }
-            router.push("/hall");
+            router.push("/baiye");
         } catch (err: any) {
             console.error("Auth Error:", err);
             alert(`操作失败: ${err.message || "请检查邮箱或密码"}`);
