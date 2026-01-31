@@ -7,6 +7,7 @@ CREATE TABLE public.baiyezhan_baiye (
     name text NOT NULL,
     description text NULL,
     cover_image text NULL,
+    password text NULL,
     owner_id uuid NOT NULL REFERENCES public.baiyezhan_users(id),
     created_at timestamp with time zone DEFAULT now()
 );

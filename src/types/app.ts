@@ -21,6 +21,7 @@ export interface Baiye {
     name: string;
     description?: string;
     cover_image?: string;
+    password?: string;
     owner_id: string;
     created_at?: string;
 }

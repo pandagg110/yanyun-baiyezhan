@@ -96,6 +96,30 @@ export const SupabaseService = {
         await supabase.auth.signOut();
     },
 
+    /**
+     * Upload an image to Supabase storage
+     */
+    uploadImage: async (file: File): Promise<string> => {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const filePath = `image/${fileName}`;
+
+        const { error } = await supabase.storage
+            .from('baiyezhan')
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: false
+            });
+
+        if (error) throw error;
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('baiyezhan')
+            .getPublicUrl(filePath);
+
+        return publicUrl;
+    },
+
     // ============ BAIYE (大房间) ============
 
     /**
@@ -128,13 +152,14 @@ export const SupabaseService = {
     /**
      * Create a new baiye (VIP: max 1, Admin: unlimited)
      */
-    createBaiye: async (ownerId: string, name: string, description?: string, coverImage?: string): Promise<Baiye> => {
+    createBaiye: async (ownerId: string, name: string, description?: string, coverImage?: string, password?: string): Promise<Baiye> => {
         const { data, error } = await supabase
             .from('baiyezhan_baiye')
             .insert({
                 name,
                 description: description || null,
                 cover_image: coverImage || null,
+                password: password || null,
                 owner_id: ownerId
             })
             .select()
@@ -156,6 +181,35 @@ export const SupabaseService = {
         const { error } = await supabase
             .from('baiyezhan_baiye')
             .delete()
+            .eq('id', baiyeId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Update a baiye (Admin or Owner only)
+     */
+    updateBaiye: async (baiyeId: string, updates: { name?: string, description?: string, cover_image?: string, password?: string | null }): Promise<void> => {
+        const user = await SupabaseService.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        // Check permissions: must be admin or owner
+        const baiye = await SupabaseService.getBaiye(baiyeId);
+        if (!baiye) throw new Error('Baiye not found');
+
+        if (user.role !== 'admin' && baiye.owner_id !== user.id) {
+            throw new Error('Permission denied');
+        }
+
+        const updatePayload: any = {};
+        if (updates.name !== undefined) updatePayload.name = updates.name;
+        if (updates.description !== undefined) updatePayload.description = updates.description;
+        if (updates.cover_image !== undefined) updatePayload.cover_image = updates.cover_image;
+        if (updates.password !== undefined) updatePayload.password = updates.password;
+
+        const { error } = await supabase
+            .from('baiyezhan_baiye')
+            .update(updatePayload)
             .eq('id', baiyeId);
 
         if (error) throw error;
