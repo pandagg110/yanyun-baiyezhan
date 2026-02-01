@@ -179,13 +179,14 @@ export default function BaiyeHallPage() {
                                         onClick={() => setRoomType("wuming")}
                                         className={`flex-1 py-2 text-sm font-bold border-2 transition-colors ${roomType === 'wuming' ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-neutral-700 text-white border-neutral-600 hover:border-neutral-500'}`}
                                     >
-                                        无名小弟
+                                        轮询轴
                                     </button>
                                     <button
-                                        onClick={() => setRoomType("healer")}
-                                        className={`flex-1 py-2 text-sm font-bold border-2 transition-colors ${roomType === 'healer' ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-neutral-700 text-white border-neutral-600 hover:border-neutral-500'}`}
+                                        disabled
+                                        className="flex-1 py-2 text-sm font-bold border-2 bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed"
+                                        title="传递轴模式暂时关闭维护中"
                                     >
-                                        霖霖大王
+                                        传递轴 (维护中)
                                     </button>
                                 </div>
                             </div>
@@ -320,7 +321,7 @@ export default function BaiyeHallPage() {
                                         )}
                                         {/* Badge */}
                                         <div className="absolute top-2 right-2 bg-black/80 px-2 py-0.5 text-[10px] text-yellow-500 font-bold border border-yellow-500/50 backdrop-blur-sm">
-                                            {room.room_type === 'healer' ? '霖霖大王' : '无名小弟'}
+                                            {room.room_type === 'healer' ? '传递轴' : '轮询轴'}
                                         </div>
                                     </div>
 

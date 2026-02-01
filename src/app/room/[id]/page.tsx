@@ -84,27 +84,16 @@ export default function RoomPage() {
         // Backup polling (slower)
         const interval = setInterval(fetchData, 5000);
 
-        // Heartbeat Loop (5s)
+        // Heartbeat Loop (5s) - Client sends heartbeat, server cron job handles cleanup
         const heartbeatInterval = setInterval(() => {
             if (userId) {
                 SupabaseService.sendHeartbeat(roomId, userId).catch(console.error);
             }
         }, 5000);
 
-        // Owner Cleanup Loop (10s)
-        const cleanupInterval = setInterval(() => {
-            if (data?.room.owner_id === userId) {
-                SupabaseService.cleanupInactiveMembers(roomId).then(() => {
-                    // refetch to see updated list
-                    fetchData();
-                }).catch(console.error);
-            }
-        }, 10000);
-
         return () => {
             clearInterval(interval);
             clearInterval(heartbeatInterval);
-            clearInterval(cleanupInterval);
             supabase.removeChannel(channel);
         };
     }, [roomId, userId, fetchData, data?.room.owner_id]);
@@ -408,7 +397,7 @@ export default function RoomPage() {
                     <div className="flex items-center gap-2">
                         <h1 className="text-xl font-bold text-yellow-500 uppercase">房间 {data.room.room_code}</h1>
                         <div className="bg-black/80 px-2 py-0.5 text-[10px] text-yellow-500 font-bold border border-yellow-500/50 backdrop-blur-sm">
-                            {data.room.room_type === 'healer' ? '霖霖大王' : '无名小弟'} (Beta)
+                            {data.room.room_type === 'healer' ? '传递轴' : '轮询轴'} (Beta)
                         </div>
                     </div>
                     {!isManualMode && (
