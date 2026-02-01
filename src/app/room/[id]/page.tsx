@@ -9,7 +9,8 @@ import { RoomData, UserRole } from "@/types/app"; // Assuming RoomData is export
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Settings, X, VolumeX, Play, Square } from "lucide-react";
+import { Guestbook } from "@/components/feature/guestbook";
+import { Copy, Lock, Settings, Skull, Trophy, UserMinus, Volume2, VolumeX, X, Play, Square } from "lucide-react";
 
 export default function RoomPage() {
     const params = useParams();
@@ -777,7 +778,10 @@ export default function RoomPage() {
 
 
 
-
+                {/* Guestbook Section */}
+                <div className="mt-8 border-t-2 border-neutral-800 pt-8 pb-12">
+                    <Guestbook type="room" targetId={roomId} />
+                </div>
             </div >
         </main >
     );

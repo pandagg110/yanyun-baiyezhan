@@ -1,5 +1,6 @@
 "use client";
 
+import { Guestbook } from "@/components/feature/guestbook";
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
@@ -153,7 +154,12 @@ export default function BaiyeHallPage() {
                     )}
                 </div>
                 <div className="flex items-center gap-3">
-                    <span className="text-xs text-neutral-500">{user?.character_name}</span>
+                    <button
+                        onClick={() => router.push("/profile")}
+                        className="text-xs text-neutral-500 hover:text-white font-bold uppercase transition-colors"
+                    >
+                        [ {user?.character_name} ]
+                    </button>
                 </div>
             </header>
 
@@ -369,6 +375,12 @@ export default function BaiyeHallPage() {
                     </div>
                 </div>
             </div>
-        </main>
+
+
+            {/* Guestbook Section */}
+            <div className="w-full max-w-6xl mx-auto mt-12 mb-8">
+                <Guestbook type="baiye" targetId={baiyeId} />
+            </div>
+        </main >
     );
 }

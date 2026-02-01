@@ -12,7 +12,18 @@ export interface User {
     id: string;
     email: string;
     character_name: string;
+    avatar_url?: string;
     role: UserRole;
+}
+
+export interface GuestbookMessage {
+    id: string;
+    content: string;
+    author_id: string;
+    author?: User; // Joined user data
+    target_type: 'global' | 'baiye' | 'room';
+    target_id?: string;
+    created_at: string;
 }
 
 // 百业 (大房间)

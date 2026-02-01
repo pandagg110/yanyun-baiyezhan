@@ -1,5 +1,6 @@
 "use client";
 
+import { Guestbook } from "@/components/feature/guestbook";
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
@@ -129,6 +130,12 @@ export default function HallPage() {
                             [ 用户管理 ]
                         </button>
                     )}
+                    <button
+                        onClick={() => router.push("/profile")}
+                        className="text-neutral-500 hover:text-white font-bold uppercase text-sm"
+                    >
+                        [ 个人档案 ]
+                    </button>
                     <button
                         onClick={async () => {
                             await SupabaseService.logout();
@@ -479,6 +486,10 @@ export default function HallPage() {
                     </div>
                 </div>
 
+                {/* Guestbook Section */}
+                <div className="w-full max-w-6xl mx-auto mt-12 mb-8">
+                    <Guestbook type="global" />
+                </div>
             </div>
         </main>
     );

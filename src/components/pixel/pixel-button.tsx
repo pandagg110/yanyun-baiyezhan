@@ -3,6 +3,7 @@ import React from "react";
 
 interface PixelButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: "primary" | "secondary" | "danger";
+    size?: "sm" | "md" | "lg";
     isLoading?: boolean;
 }
 
@@ -22,6 +23,9 @@ export function PixelButton({
                 variant === "primary" && "bg-yellow-400 text-black hover:bg-yellow-300",
                 variant === "secondary" && "bg-white text-black hover:bg-neutral-100",
                 variant === "danger" && "bg-red-400 text-black hover:bg-red-300",
+                props.size === "sm" && "px-3 py-1 text-xs",
+                (props.size === "md" || !props.size) && "px-6 py-3",
+                props.size === "lg" && "px-8 py-4 text-xl",
                 className
             )}
             disabled={isLoading || props.disabled}

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Baiye, Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
+import { Baiye, GuestbookMessage, Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -689,11 +689,72 @@ export const SupabaseService = {
         if (error) throw error;
     },
 
-    /**
-     * Check if current user is admin
-     */
     isAdmin: async (): Promise<boolean> => {
         const user = await SupabaseService.getUser();
         return user?.role === 'admin';
+    },
+
+    // ============ PROFILE METHODS ============
+
+    updateProfile: async (userId: string, updates: { character_name?: string, avatar_url?: string }): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_users')
+            .update(updates)
+            .eq('id', userId);
+
+        if (error) throw error;
+    },
+
+    // ============ GUESTBOOK METHODS ============
+
+    getGuestbookMessages: async (targetType: 'global' | 'baiye' | 'room', targetId?: string, limit = 50): Promise<GuestbookMessage[]> => {
+        let query = supabase
+            .from('baiyezhan_guestbook')
+            .select('*, author:baiyezhan_users(*)')
+            .eq('target_type', targetType)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (targetId) {
+            query = query.eq('target_id', targetId);
+        } else {
+            // For global, ensure target_id is null or ignored depending on implementation. 
+            // In our schema, global messages have NULL target_id.
+            query = query.is('target_id', null);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        // Map data to match interface (flatten user)
+        return (data as any[]).map(msg => ({
+            ...msg,
+            author: msg.author // Join returns object
+        })) as GuestbookMessage[];
+    },
+
+    postGuestbookMessage: async (authorId: string, content: string, targetType: 'global' | 'baiye' | 'room', targetId?: string): Promise<GuestbookMessage> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_guestbook')
+            .insert({
+                author_id: authorId,
+                content,
+                target_type: targetType,
+                target_id: targetId || null
+            })
+            .select('*, author:baiyezhan_users(*)')
+            .single();
+
+        if (error) throw error;
+        return data as unknown as GuestbookMessage;
+    },
+
+    deleteGuestbookMessage: async (messageId: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_guestbook')
+            .delete()
+            .eq('id', messageId);
+
+        if (error) throw error;
     }
 };
