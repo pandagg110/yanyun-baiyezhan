@@ -140,7 +140,7 @@ export default function RoomPage() {
     // Base64 encoded silent WAV audio (very small, ~1 second of silence)
     const SILENT_AUDIO_SRC = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
-    // Initialize Audio Objects
+    // Initialize Audio Objects + Start Silent Keepalive
     useEffect(() => {
         // Create alert audio element
         const audio = new Audio();
@@ -148,11 +148,16 @@ export default function RoomPage() {
         audio.src = DEFAULT_AUDIO_SRC;
         audioInstanceRef.current = audio;
 
-        // Create silent audio element for keepalive
+        // Create silent audio element for keepalive - play immediately and forever
         const silentAudio = new Audio(SILENT_AUDIO_SRC);
         silentAudio.loop = true;
         silentAudio.volume = 0.01; // Nearly silent but not zero (some browsers ignore volume=0)
         silentAudioRef.current = silentAudio;
+
+        // Start playing immediately to keep tab alive in background
+        silentAudio.play().catch(() => {
+            // Autoplay blocked - will be enabled when user clicks "开启声音" button
+        });
 
         return () => {
             if (audioInstanceRef.current) {
@@ -165,27 +170,6 @@ export default function RoomPage() {
             }
         };
     }, []);
-
-    // Silent Audio Keepalive - play when round is active, stop when not
-    useEffect(() => {
-        const silentAudio = silentAudioRef.current;
-        if (!silentAudio) return;
-
-        const isRoundActive = data?.state?.round_start_time !== null && data?.state?.round_start_time !== undefined;
-
-        if (isRoundActive && !engine.isMyTurn) {
-            // Round is active but not my turn - play silent audio to keep tab alive
-            silentAudio.play().catch((e) => {
-                // Ignore autoplay errors, user will need to interact first
-                if (e.name !== 'NotAllowedError') {
-                    console.error("Silent audio error:", e);
-                }
-            });
-        } else {
-            // Either round not active or it's my turn (real audio will play)
-            silentAudio.pause();
-        }
-    }, [data?.state?.round_start_time, engine.isMyTurn]);
 
     // Helper for safe playback with retry mechanism
     const playAudioSafe = async (audio: HTMLAudioElement, retries = 3) => {
