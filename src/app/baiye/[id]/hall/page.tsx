@@ -7,7 +7,33 @@ import { PixelInput } from "@/components/pixel/pixel-input";
 import { SupabaseService } from "@/services/supabase-service";
 import { Baiye, Room, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+
+// Helper to unlock audio before entering room
+// This must be called from a user interaction (click) context
+function unlockAudioContext() {
+    try {
+        // Method 1: Play and pause a silent audio
+        const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+        audio.volume = 0;
+        audio.play().then(() => {
+            audio.pause();
+            console.log("Audio context unlocked successfully");
+        }).catch(() => {
+            // Ignore errors, we tried our best
+        });
+
+        // Method 2: Resume AudioContext if available
+        if (typeof AudioContext !== 'undefined') {
+            const ctx = new AudioContext();
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+        }
+    } catch (e) {
+        console.warn("Audio unlock attempt failed:", e);
+    }
+}
 
 export default function BaiyeHallPage() {
     const params = useParams();
@@ -79,6 +105,9 @@ export default function BaiyeHallPage() {
     }, [baiyeId]);
 
     const handleCreate = async () => {
+        // Unlock audio context on user click - this allows audio to play later in the room
+        unlockAudioContext();
+
         if (!user || !baiye) return;
         if (!roomName) return alert("请输入房间名");
         if (!canCreateRoom) {
@@ -110,6 +139,9 @@ export default function BaiyeHallPage() {
     };
 
     const handleJoin = async (e: React.FormEvent | null, code: string, password?: string) => {
+        // Unlock audio context on user click - this allows audio to play later in the room
+        unlockAudioContext();
+
         if (e) e.preventDefault();
         if (!user) return;
         if (!code) return alert("请输入房间码");

@@ -192,7 +192,8 @@ export default function RoomPage() {
                     console.log("Audio play aborted (harmless)");
                     return false;
                 } else if (e.name === 'NotAllowedError') {
-                    console.error("Audio blocked by browser policy");
+                    // This is expected on first load - user needs to interact with page first
+                    console.warn("Audio blocked by browser autoplay policy - user interaction required");
                     setAudioBlocked(true);
                     return false;
                 } else {
