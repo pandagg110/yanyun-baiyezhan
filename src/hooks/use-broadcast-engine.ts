@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export interface BroadcastConfig {
     roundDuration: number; // in seconds
@@ -19,6 +19,8 @@ export interface BroadcastState {
 /**
  * The "Local Deduction" Engine.
  * Calculates state purely based on (Now - StartTime).
+ * 
+ * Uses Web Worker for timer to prevent Chrome background tab throttling.
  */
 export function useBroadcastEngine(
     startTime: number | null, // timestamp in ms. null means not running.
@@ -27,16 +29,38 @@ export function useBroadcastEngine(
     mode: 'auto' | 'manual' = 'auto'
 ): BroadcastState {
     const [now, setNow] = useState(() => Date.now());
+    const workerRef = useRef<Worker | null>(null);
 
-    // High-frequency update loop
+    // High-frequency update loop using Web Worker (immune to background throttling)
     useEffect(() => {
-        if (startTime === null) return;
+        if (startTime === null) {
+            // Stop worker if not running
+            if (workerRef.current) {
+                workerRef.current.postMessage({ command: 'stop' });
+                workerRef.current.terminate();
+                workerRef.current = null;
+            }
+            return;
+        }
 
-        const intervalId = setInterval(() => {
-            setNow(Date.now());
-        }, 100); // 10Hz updates for smooth progress bars
+        // Create Web Worker for timer
+        const worker = new Worker('/workers/timer-worker.js');
+        workerRef.current = worker;
 
-        return () => clearInterval(intervalId);
+        worker.onmessage = (e) => {
+            if (e.data.type === 'tick') {
+                setNow(Date.now());
+            }
+        };
+
+        // Start timer at 10Hz for smooth progress bars
+        worker.postMessage({ command: 'start', interval: 100 });
+
+        return () => {
+            worker.postMessage({ command: 'stop' });
+            worker.terminate();
+            workerRef.current = null;
+        };
     }, [startTime]);
 
     console.log("Hooks Debug:", { startTime, mode });

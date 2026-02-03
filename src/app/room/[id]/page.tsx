@@ -137,7 +137,7 @@ export default function RoomPage() {
     const silentAudioRef = useRef<HTMLAudioElement | null>(null);
     const wasMyTurnRef = useRef(false);
     const DEFAULT_AUDIO_SRC = '/sounds/default-alert.mp3';
-    // Base64 encoded silent WAV audio (very small, ~1 second of silence)
+    // Base64 encoded silent WAV audio (kept for potential future use, but Web Worker now handles keepalive)
     const SILENT_AUDIO_SRC = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
     // Initialize Audio Objects + Start Silent Keepalive
