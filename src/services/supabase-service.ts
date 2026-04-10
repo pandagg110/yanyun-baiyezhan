@@ -535,7 +535,7 @@ export const SupabaseService = {
 
         if (error) throw error;
     },
-    uploadFile: async (file: File, folder: 'sounds' | 'image'): Promise<string> => {
+    uploadFile: async (file: File, folder: 'sounds' | 'image' | 'screenshots'): Promise<string> => {
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
         const filePath = `${folder}/${fileName}`; // Use folder structure

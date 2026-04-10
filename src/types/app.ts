@@ -71,3 +71,71 @@ export interface RoomData {
     state: RoomState;
     members: RoomMember[];
 }
+
+// ──────────────────────────────────────
+// Match System (对战记录 + 个人战绩)
+// ──────────────────────────────────────
+
+/** 对战记录（Match 级别，对称设计） */
+export interface Match {
+    id: string;
+    baiye_id: string;           // 提交方百业 ID
+    team_a: string;             // 百业A名称
+    team_b: string;             // 百业B名称
+    match_key: string;          // 去重唯一键 (sorted names + time)
+    winner: string | null;      // 胜利方百业名 | 'draw' | null(待定)
+    match_start_time?: string;  // 对战开始时间
+    match_date?: string;        // auto-synced from match_start_time
+    notes?: string;
+    screenshot_urls?: string[];
+    created_by?: string;
+    created_at: string;
+}
+
+/** 个人战绩（Player 级别） */
+export interface MatchStat {
+    id: string;
+    match_id: string;
+    team_name: string;          // 所属队伍名称（对应 match 的 team_a 或 team_b）
+    player_name: string;
+    user_id?: string;
+
+    // 战斗数据
+    kills: number;
+    assists: number;
+    deaths: number;
+    coins: number;
+
+    // 详细数据
+    damage: number;
+    damage_taken: number;
+    healing: number;
+    building_damage: number;
+
+    created_at: string;
+}
+
+/** OCR 识别结果 (豆包返回的结构) */
+export interface OcrMatchResult {
+    players: Array<{
+        player_name: string;
+        kills: number;
+        assists: number;
+        deaths: number;
+        coins: number;
+        damage: number;
+        damage_taken: number;
+        healing: number;
+        building_damage: number;
+    }>;
+}
+
+/** 对战截图证据 */
+export interface MatchScreenshot {
+    id: string;
+    match_id: string;
+    team_name: string;
+    image_url: string;
+    uploaded_by?: string;
+    created_at: string;
+}
