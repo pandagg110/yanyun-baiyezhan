@@ -238,12 +238,21 @@ export default function CardGeneratorPage() {
 
     // Auto-select current user's character
     useEffect(() => {
-        if (user?.character_name && playerAggs.length > 0) {
+        if (user?.character_name) {
             setSelectedPlayer(user.character_name);
         }
-    }, [playerAggs, user?.character_name]);
+    }, [user?.character_name]);
 
-    const currentPlayer = playerAggs.find(p => p.player_name === selectedPlayer);
+    // Find player data, or fallback to zeroed stats
+    const currentPlayer: PlayerAgg = playerAggs.find(p => p.player_name === selectedPlayer) || {
+        player_name: selectedPlayer || user?.character_name || "",
+        matches_played: 0,
+        total_kills: 0, total_assists: 0, total_deaths: 0,
+        total_coins: 0, total_coin_value: 0,
+        total_building_damage: 0, total_damage: 0, total_healing: 0,
+        avg_coin_ratio: 0, avg_building: 0, avg_damage: 0,
+        avg_kills: 0, avg_healing: 0, kda: 0,
+    };
 
     // Filter display labels
     const filterLabel = useMemo(() => {
@@ -267,7 +276,6 @@ export default function CardGeneratorPage() {
 
     // ── Generate card ──
     const handleGenerate = () => {
-        if (!currentPlayer) return;
         setGenerating(true);
         setShowParticles(true);
         setGenerated(false);
@@ -458,11 +466,11 @@ export default function CardGeneratorPage() {
                                             <h2 className="text-xl font-black text-white truncate leading-tight"
                                                 style={{ textShadow: "0 0 10px rgba(255,255,255,0.1)" }}
                                             >
-                                                {currentPlayer?.player_name || "选择玩家"}
+                                                {currentPlayer.player_name || "—"}
                                             </h2>
                                             {/* Matches count */}
                                             <div className="text-[10px] text-neutral-500 mt-0.5">
-                                                参与 {currentPlayer?.matches_played || 0} 场对战
+                                                参与 {currentPlayer.matches_played || 0} 场对战
                                             </div>
                                         </div>
                                     </div>
@@ -588,9 +596,9 @@ export default function CardGeneratorPage() {
                         {/* Generate Button */}
                         <button
                             onClick={handleGenerate}
-                            disabled={!currentPlayer || generating}
+                            disabled={generating}
                             className={`w-full py-3.5 text-sm font-black uppercase tracking-wider border-3 transition-all ${
-                                !currentPlayer || generating
+                                generating
                                     ? "bg-neutral-700 border-neutral-600 text-neutral-500 cursor-not-allowed"
                                     : "bg-gradient-to-r from-yellow-500 to-amber-500 border-yellow-600 text-black hover:from-yellow-400 hover:to-amber-400 hover:shadow-[0_0_20px_rgba(250,204,21,0.3)]"
                             }`}

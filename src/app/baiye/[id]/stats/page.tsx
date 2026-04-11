@@ -3,8 +3,9 @@
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
+import { recognizeScreenshots, OcrPlayer } from "@/services/ocr-service";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Match, OcrMatchResult, User } from "@/types/app";
+import { Baiye, Match, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -205,20 +206,11 @@ export default function StatsUploadPage() {
             }
             setUploadedUrls(urls);
 
-            const res = await fetch("/api/ocr", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ imageUrls: urls }),
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || `HTTP ${res.status}`);
-            }
-
-            const { data } = (await res.json()) as { data: OcrMatchResult };
+            // Call Doubao directly from browser (bypasses Lambda timeout)
+            // Auto-falls back to /api/ocr if CORS blocks direct call
+            const data = await recognizeScreenshots(urls);
             if (data.players && data.players.length > 0) {
-                setPlayers(data.players.map((p) => ({
+                setPlayers(data.players.map((p: OcrPlayer) => ({
                     player_name: p.player_name || "",
                     kills: p.kills || 0,
                     assists: p.assists || 0,

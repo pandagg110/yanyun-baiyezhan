@@ -241,24 +241,27 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // For each match, get per-team stats counts
-        const matchesWithInfo = await Promise.all(
-            (matches || []).map(async (m) => {
-                const { data: teamStats } = await supabase
-                    .from('baiyezhan_match_stats')
-                    .select('team_name')
-                    .eq('match_id', m.id);
+        // Batch-fetch all stats in ONE query (fixes N+1 performance issue)
+        const matchIds = (matches || []).map(m => m.id);
+        const { data: allStats } = await supabase
+            .from('baiyezhan_match_stats')
+            .select('match_id, team_name')
+            .in('match_id', matchIds);
 
-                const submittedTeams = [...new Set((teamStats || []).map(s => s.team_name))];
-                const statsCount = teamStats?.length || 0;
+        // Group stats by match_id in memory
+        const statsMap = new Map<string, Set<string>>();
+        const countMap = new Map<string, number>();
+        for (const s of (allStats || [])) {
+            if (!statsMap.has(s.match_id)) statsMap.set(s.match_id, new Set());
+            statsMap.get(s.match_id)!.add(s.team_name);
+            countMap.set(s.match_id, (countMap.get(s.match_id) || 0) + 1);
+        }
 
-                return {
-                    ...m,
-                    stats_count: statsCount,
-                    submitted_teams: submittedTeams,
-                };
-            })
-        );
+        const matchesWithInfo = (matches || []).map(m => ({
+            ...m,
+            stats_count: countMap.get(m.id) || 0,
+            submitted_teams: [...(statsMap.get(m.id) || [])],
+        }));
 
         return NextResponse.json({ matches: matchesWithInfo });
     } catch (error: unknown) {

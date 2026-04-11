@@ -10,6 +10,7 @@ frontend:
         - echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL" >> .env.production
         - echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env.production
         - echo "DOUBAO_API_KEY=$DOUBAO_API_KEY" >> .env.production
+        - echo "NEXT_PUBLIC_DOUBAO_API_KEY=$DOUBAO_API_KEY" >> .env.production
     build:
       commands:
         - npm run build
