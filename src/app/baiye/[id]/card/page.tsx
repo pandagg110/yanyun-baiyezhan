@@ -48,7 +48,7 @@ interface StatModule {
 }
 
 const STAT_MODULES: StatModule[] = [
-    { key: "kda", label: "KDA", icon: "⚔", getValue: p => p.kda.toFixed(2), color: "#22d3ee" },
+    { key: "kda", label: "KD", icon: "⚔", getValue: p => p.kda.toFixed(2), color: "#22d3ee" },
     { key: "building", label: "塔伤", icon: "🏛", getValue: p => formatNum(p.avg_building), color: "#f97316" },
     { key: "kills_total", label: "人头", icon: "💀", getValue: p => p.total_kills.toString(), color: "#ef4444" },
     { key: "avg_damage", label: "场均输出", icon: "🔥", getValue: p => formatNum(p.avg_damage), color: "#f59e0b" },
@@ -230,7 +230,7 @@ export default function CardGeneratorPage() {
             p.avg_damage = p.total_damage / p.matches_played;
             p.avg_kills = p.total_kills / p.matches_played;
             p.avg_healing = p.total_healing / p.matches_played;
-            p.kda = (p.total_kills + p.total_assists) / Math.max(p.total_deaths, 1);
+            p.kda = p.total_kills / Math.max(p.total_deaths, 1);
         }
 
         return Array.from(agg.values()).sort((a, b) => b.kda - a.kda);

@@ -19,7 +19,7 @@ interface PlayerAgg {
     total_building_damage: number;
     avg_coin_ratio: number;    // avg(coins / coin_value)
     avg_building: number;      // avg building_damage
-    kda: number;               // (kills + assists) / max(deaths, 1)
+    kda: number;               // kills / max(deaths, 1)
 }
 
 type SortDir = 'asc' | 'desc';
@@ -73,7 +73,7 @@ const MATCH_TYPES = ["全部", "排位", "正赛", "约战"];
 const CHART_METRICS = [
     { key: "coin_ratio", label: "拿野", color: "#facc15" },
     { key: "building", label: "塔伤", color: "#f97316" },
-    { key: "kda", label: "KDA", color: "#22d3ee" },
+    { key: "kda", label: "KD", color: "#22d3ee" },
 ] as const;
 
 type DetailSortKey = 'player_name' | 'coin_ratio' | 'building_damage' | 'kda' | 'kills' | 'assists' | 'deaths' | 'coins' | 'damage' | 'damage_taken' | 'healing';
@@ -82,7 +82,7 @@ const DETAIL_COLS: { key: DetailSortKey; label: string; color?: string; align?: 
     { key: 'player_name', label: '玩家', align: 'left' },
     { key: 'coin_ratio', label: '拿野', color: 'text-yellow-500/70' },
     { key: 'building_damage', label: '塔伤', color: 'text-orange-400/70' },
-    { key: 'kda', label: 'KDA', color: 'text-cyan-400/70' },
+    { key: 'kda', label: 'KD', color: 'text-cyan-400/70' },
     { key: 'kills', label: '击败' },
     { key: 'assists', label: '助攻' },
     { key: 'deaths', label: '重伤' },
@@ -227,7 +227,7 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
     const rows = useMemo(() => {
         const enriched = stats.map(s => {
             const cr = (s.coins || 0) / coinValue;
-            const pKda = ((s.kills || 0) + (s.assists || 0)) / Math.max(s.deaths || 0, 1);
+            const pKda = (s.kills || 0) / Math.max(s.deaths || 0, 1);
             return { s, coin_ratio: cr, kda: pKda };
         });
 
@@ -392,6 +392,8 @@ export default function AnalysisPage() {
         for (const s of stats) {
             const m = matchMap.get(s.match_id);
             if (!m) continue;
+            // Only count our baiye's players, skip enemy team
+            if (s.team_name !== baiye?.name) continue;
             const coinValue = m.coin_value || 660;
 
             if (!playerMap.has(s.player_name)) {
@@ -425,11 +427,11 @@ export default function AnalysisPage() {
                 total_building_damage: p.building,
                 avg_coin_ratio: p.coinRatios.reduce((a, b) => a + b, 0) / n,
                 avg_building: p.building / n,
-                kda: (p.kills + p.assists) / Math.max(p.deaths, 1),
+                kda: p.kills / Math.max(p.deaths, 1),
             });
         }
         return result;
-    }, [stats, matches]);
+    }, [stats, matches, baiye?.name]);
 
     // Sorted player list
     const sortedPlayerAggs = useMemo(() => {
@@ -451,7 +453,7 @@ export default function AnalysisPage() {
         const matchMap = new Map(matches.map(m => [m.id, m]));
 
         return stats
-            .filter(s => s.player_name === selectedPlayer)
+            .filter(s => s.player_name === selectedPlayer && s.team_name === baiye?.name)
             .map(s => {
                 const m = matchMap.get(s.match_id);
                 if (!m) return null;
@@ -460,44 +462,47 @@ export default function AnalysisPage() {
                     match: m,
                     stat: s,
                     coin_ratio: (s.coins || 0) / cv,
-                    kda: ((s.kills || 0) + (s.assists || 0)) / Math.max(s.deaths || 0, 1),
+                    kda: (s.kills || 0) / Math.max(s.deaths || 0, 1),
                 } as PerMatchPlayer;
             })
             .filter(Boolean)
             .sort((a, b) => new Date(a!.match.match_start_time!).getTime() - new Date(b!.match.match_start_time!).getTime()) as PerMatchPlayer[];
-    }, [selectedPlayer, stats, matches]);
+    }, [selectedPlayer, stats, matches, baiye?.name]);
 
     // ── Per-match aggregation (for bottom section) ──
     const matchAggs = useMemo(() => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
-        const grouped = new Map<string, MatchStat[]>();
+        // Group ALL stats for detail tables (both teams)
+        const allGrouped = new Map<string, MatchStat[]>();
         for (const s of stats) {
-            if (!grouped.has(s.match_id)) grouped.set(s.match_id, []);
-            grouped.get(s.match_id)!.push(s);
+            if (!allGrouped.has(s.match_id)) allGrouped.set(s.match_id, []);
+            allGrouped.get(s.match_id)!.push(s);
         }
 
         return matches.map(m => {
-            const mStats = grouped.get(m.id) || [];
-            const n = mStats.length || 1;
-            const totalKills = mStats.reduce((a, s) => a + (s.kills || 0), 0);
-            const totalAssists = mStats.reduce((a, s) => a + (s.assists || 0), 0);
-            const totalDeaths = mStats.reduce((a, s) => a + (s.deaths || 0), 0);
-            const totalCoins = mStats.reduce((a, s) => a + (s.coins || 0), 0);
-            const totalBuilding = mStats.reduce((a, s) => a + (s.building_damage || 0), 0);
+            const allStats = allGrouped.get(m.id) || [];
+            // Only our team for metric aggregations
+            const ourStats = allStats.filter(s => s.team_name === baiye?.name);
+            const n = ourStats.length || 1;
+            const totalKills = ourStats.reduce((a, s) => a + (s.kills || 0), 0);
+            const totalAssists = ourStats.reduce((a, s) => a + (s.assists || 0), 0);
+            const totalDeaths = ourStats.reduce((a, s) => a + (s.deaths || 0), 0);
+            const totalCoins = ourStats.reduce((a, s) => a + (s.coins || 0), 0);
+            const totalBuilding = ourStats.reduce((a, s) => a + (s.building_damage || 0), 0);
             const cv = m.coin_value || 660;
 
             return {
                 match: m,
-                stats: mStats,
-                player_count: mStats.length,
+                stats: ourStats,
+                player_count: ourStats.length,
                 avg_coin_ratio: totalCoins / n / cv,
                 avg_building: totalBuilding / n,
-                kda: (totalKills + totalAssists) / Math.max(totalDeaths, 1),
-                team_a_stats: mStats.filter(s => s.team_name === m.team_a),
-                team_b_stats: mStats.filter(s => s.team_name === m.team_b),
+                kda: totalKills / Math.max(totalDeaths, 1),
+                team_a_stats: allStats.filter(s => s.team_name === m.team_a),
+                team_b_stats: allStats.filter(s => s.team_name === m.team_b),
             };
         });
-    }, [matches, stats]);
+    }, [matches, stats, baiye?.name]);
 
     // ── Chart rendering (SVG) ──
     const renderChart = () => {
@@ -747,7 +752,7 @@ export default function AnalysisPage() {
                                             { key: 'matches_played' as const, label: '场数' },
                                             { key: 'avg_coin_ratio' as const, label: '拿野', sub: 'coin/价值', color: 'text-yellow-500' },
                                             { key: 'avg_building' as const, label: '平均塔伤', color: 'text-orange-400' },
-                                            { key: 'kda' as const, label: 'KDA', sub: '(K+A)/D', color: 'text-cyan-400' },
+                                            { key: 'kda' as const, label: 'KD', sub: 'K/D', color: 'text-cyan-400' },
                                         ]).map(col => (
                                             <th
                                                 key={col.key}
