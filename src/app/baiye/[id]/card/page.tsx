@@ -236,12 +236,12 @@ export default function CardGeneratorPage() {
         return Array.from(agg.values()).sort((a, b) => b.kda - a.kda);
     }, [baiye?.name, matches, stats]);
 
-    // Auto-select first player
+    // Auto-select current user's character
     useEffect(() => {
-        if (playerAggs.length > 0 && !selectedPlayer) {
-            setSelectedPlayer(playerAggs[0].player_name);
+        if (user?.character_name && playerAggs.length > 0) {
+            setSelectedPlayer(user.character_name);
         }
-    }, [playerAggs, selectedPlayer]);
+    }, [playerAggs, user?.character_name]);
 
     const currentPlayer = playerAggs.find(p => p.player_name === selectedPlayer);
 
@@ -538,39 +538,6 @@ export default function CardGeneratorPage() {
 
                     {/* ━━━ Right: Config Panel ━━━ */}
                     <div className="w-full lg:w-[320px] shrink-0 space-y-4">
-                        {/* Player Selector */}
-                        <PixelCard className="bg-neutral-800 space-y-3">
-                            <h3 className="text-xs font-bold text-yellow-500 uppercase border-b border-yellow-500/20 pb-2">
-                                👤 选择玩家
-                            </h3>
-                            {fetching ? (
-                                <div className="flex items-center gap-2 text-xs text-yellow-500 py-4 justify-center">
-                                    <div className="w-3 h-3 border-2 border-yellow-500 border-t-transparent animate-spin" />
-                                    加载中...
-                                </div>
-                            ) : playerAggs.length === 0 ? (
-                                <div className="text-xs text-neutral-600 text-center py-4">
-                                    暂无数据，调整筛选条件
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                                    {playerAggs.map(p => (
-                                        <button
-                                            key={p.player_name}
-                                            onClick={() => { setSelectedPlayer(p.player_name); setGenerated(false); }}
-                                            className={`py-2 px-2 text-xs font-bold border-2 transition-all truncate ${
-                                                selectedPlayer === p.player_name
-                                                    ? "bg-yellow-500 border-yellow-600 text-black"
-                                                    : "bg-neutral-700/50 border-neutral-600 text-neutral-300 hover:border-neutral-500"
-                                            }`}
-                                            title={p.player_name}
-                                        >
-                                            {p.player_name}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </PixelCard>
 
                         {/* Stat Modules */}
                         <PixelCard className="bg-neutral-800 space-y-3">
