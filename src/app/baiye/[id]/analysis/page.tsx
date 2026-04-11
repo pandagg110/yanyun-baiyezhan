@@ -356,6 +356,27 @@ export default function AnalysisPage() {
 
     const [detailSort, setDetailSort] = useState<SortState<DetailSortKey>>({ key: 'kda', dir: 'desc' });
 
+    // ── Player rename (admin only) ──
+    const [renamingPlayer, setRenamingPlayer] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [renameLoading, setRenameLoading] = useState(false);
+    const isAdmin = user?.role === 'admin';
+
+    // ── Rename history log ──
+    interface RenameLogEntry {
+        id: string;
+        old_name: string;
+        new_name: string;
+        affected_count: number;
+        performed_at: string;
+        is_undone: boolean;
+        undone_at: string | null;
+        performer?: { character_name: string } | null;
+    }
+    const [renameLogs, setRenameLogs] = useState<RenameLogEntry[]>([]);
+    const [showRenameHistory, setShowRenameHistory] = useState(false);
+    const [undoLoading, setUndoLoading] = useState(false);
+
     // ── Init ──
     useEffect(() => {
         const init = async () => {
@@ -393,6 +414,92 @@ export default function AnalysisPage() {
     useEffect(() => {
         if (baiye?.name) fetchData();
     }, [baiye?.name, fetchData]);
+
+    // ── Rename player handler ──
+    const fetchRenameLogs = useCallback(async () => {
+        try {
+            const res = await fetch('/api/analysis/rename');
+            if (res.ok) {
+                const data = await res.json();
+                setRenameLogs(data.logs || []);
+            }
+        } catch (err) {
+            console.error('Fetch rename logs error:', err);
+        }
+    }, []);
+
+    const handleRename = useCallback(async (oldName: string, newName: string) => {
+        if (!newName.trim() || newName.trim() === oldName) {
+            setRenamingPlayer(null);
+            return;
+        }
+        setRenameLoading(true);
+        try {
+            const { data: { session } } = await SupabaseService.getSession();
+            const token = session?.access_token;
+            const res = await fetch('/api/analysis/rename', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ oldName, newName: newName.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('重命名失败: ' + (data.error || '未知错误'));
+            } else {
+                alert(data.message || '重命名成功');
+                if (selectedPlayer === oldName) setSelectedPlayer(newName.trim());
+                setComparePlayers(prev => prev.map(p => p === oldName ? newName.trim() : p));
+                await fetchData();
+                await fetchRenameLogs();
+            }
+        } catch (err) {
+            console.error('Rename error:', err);
+            alert('重命名失败');
+        } finally {
+            setRenameLoading(false);
+            setRenamingPlayer(null);
+        }
+    }, [fetchData, fetchRenameLogs, selectedPlayer]);
+
+    const handleUndo = useCallback(async (logId: string) => {
+        if (!confirm('确认要撤销这次改名操作吗？')) return;
+        setUndoLoading(true);
+        try {
+            const { data: { session } } = await SupabaseService.getSession();
+            const token = session?.access_token;
+            const res = await fetch('/api/analysis/rename', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ logId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('撤销失败: ' + (data.error || '未知错误'));
+            } else {
+                alert(data.message || '撤销成功');
+                await fetchData();
+                await fetchRenameLogs();
+            }
+        } catch (err) {
+            console.error('Undo error:', err);
+            alert('撤销失败');
+        } finally {
+            setUndoLoading(false);
+        }
+    }, [fetchData, fetchRenameLogs]);
+
+    // Load rename logs when history panel is opened
+    useEffect(() => {
+        if (showRenameHistory && isAdmin) {
+            fetchRenameLogs();
+        }
+    }, [showRenameHistory, isAdmin, fetchRenameLogs]);
 
     // ── Compute player aggregations ──
     const playerAggs = useMemo(() => {
@@ -898,8 +1005,63 @@ export default function AnalysisPage() {
                                                 <td className="py-2.5 px-2 text-neutral-600 text-xs">
                                                     {i + 1}
                                                 </td>
-                                                <td className="py-2.5 px-2 text-white text-xs font-bold">
-                                                    {p.player_name}
+                                                <td className="py-2.5 px-2 text-xs font-bold" style={{ minWidth: 120 }}>
+                                                    {renamingPlayer === p.player_name ? (
+                                                        <form
+                                                            className="flex items-center gap-1"
+                                                            onSubmit={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                handleRename(p.player_name, renameValue);
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <input
+                                                                autoFocus
+                                                                className="bg-neutral-700 border border-yellow-500/50 text-white text-xs px-1.5 py-0.5 w-24 outline-none focus:border-yellow-500"
+                                                                value={renameValue}
+                                                                onChange={(e) => setRenameValue(e.target.value)}
+                                                                disabled={renameLoading}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Escape') {
+                                                                        e.stopPropagation();
+                                                                        setRenamingPlayer(null);
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <button
+                                                                type="submit"
+                                                                disabled={renameLoading}
+                                                                className="text-green-400 hover:text-green-300 text-xs px-1 disabled:opacity-50"
+                                                            >
+                                                                {renameLoading ? '...' : '✓'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => { e.stopPropagation(); setRenamingPlayer(null); }}
+                                                                className="text-red-400 hover:text-red-300 text-xs px-1"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </form>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1.5 text-white">
+                                                            {p.player_name}
+                                                            {isAdmin && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setRenamingPlayer(p.player_name);
+                                                                        setRenameValue(p.player_name);
+                                                                    }}
+                                                                    className="text-neutral-600 hover:text-yellow-500 transition-colors text-[10px]"
+                                                                    title="修改玩家名（修正OCR识别错误）"
+                                                                >
+                                                                    ✏️
+                                                                </button>
+                                                            )}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center text-xs text-neutral-300">
                                                     {p.matches_played}
@@ -948,6 +1110,77 @@ export default function AnalysisPage() {
                             </table>
                         </div>
                     </PixelCard>
+                )}
+
+                {/* ═══ Rename History Panel (admin only) ═══ */}
+                {!fetching && viewTab === 'players' && isAdmin && (
+                    <div className="border border-neutral-700">
+                        <button
+                            onClick={() => setShowRenameHistory(v => !v)}
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                            <span className="text-neutral-600">{showRenameHistory ? '▼' : '▶'}</span>
+                            📝 改名操作日志
+                            {renameLogs.length > 0 && (
+                                <span className="text-[10px] text-neutral-600 ml-1">({renameLogs.length})</span>
+                            )}
+                        </button>
+                        {showRenameHistory && (
+                            <div className="border-t border-neutral-700 bg-neutral-900/50 p-4 space-y-2 max-h-64 overflow-y-auto" style={{ scrollbarColor: '#525252 transparent' }}>
+                                {renameLogs.length === 0 ? (
+                                    <div className="text-xs text-neutral-600 text-center py-4">暂无改名记录</div>
+                                ) : (
+                                    renameLogs.map((log, idx) => {
+                                        // Can only undo the most recent non-undone entry
+                                        const firstNonUndone = renameLogs.find(l => !l.is_undone);
+                                        const canUndo = !log.is_undone && firstNonUndone?.id === log.id;
+                                        const time = new Date(log.performed_at).toLocaleString('zh-CN', {
+                                            month: '2-digit', day: '2-digit',
+                                            hour: '2-digit', minute: '2-digit',
+                                        });
+
+                                        return (
+                                            <div
+                                                key={log.id}
+                                                className={`flex items-center gap-3 px-3 py-2 text-xs border transition-all ${
+                                                    log.is_undone
+                                                        ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
+                                                        : 'border-neutral-700 bg-neutral-800/50'
+                                                }`}
+                                            >
+                                                <span className="text-neutral-600 w-5 shrink-0">{idx + 1}</span>
+                                                <span className="text-neutral-400 w-28 shrink-0">{time}</span>
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="text-red-400 line-through">{log.old_name}</span>
+                                                    <span className="text-neutral-600 mx-1.5">→</span>
+                                                    <span className="text-green-400">{log.new_name}</span>
+                                                    <span className="text-neutral-600 ml-2">({log.affected_count}条)</span>
+                                                </span>
+                                                {log.performer?.character_name && (
+                                                    <span className="text-neutral-600 text-[10px] shrink-0">
+                                                        by {log.performer.character_name}
+                                                    </span>
+                                                )}
+                                                {log.is_undone ? (
+                                                    <span className="text-neutral-600 text-[10px] shrink-0 px-1.5 py-0.5 border border-neutral-700">
+                                                        已撤销
+                                                    </span>
+                                                ) : canUndo ? (
+                                                    <button
+                                                        onClick={() => handleUndo(log.id)}
+                                                        disabled={undoLoading}
+                                                        className="shrink-0 px-2 py-0.5 text-[10px] font-bold border border-orange-500/30 text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                                                    >
+                                                        {undoLoading ? '...' : '⭯ 撤销'}
+                                                    </button>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* ═══ Player Trend Chart — Floating Modal ═══ */}
