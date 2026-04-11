@@ -4,7 +4,172 @@ import { PixelButton } from "@/components/pixel/pixel-button";
 import { SupabaseService } from "@/services/supabase-service";
 import { Baiye, Match, MatchScreenshot, MatchStat, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// ═══ Timeline Component ═══
+function MatchTimeline({ matches, baiyeName, onSelect, activeId }: {
+    matches: { id: string; team_a: string; team_b: string; winner: string | null; match_type?: string; match_start_time?: string }[];
+    baiyeName: string;
+    onSelect: (id: string) => void;
+    activeId: string | null;
+}) {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragState = useRef({ startX: 0, scrollLeft: 0 });
+
+    // Sort chronologically (oldest → newest = left → right)
+    const sorted = useMemo(() =>
+        [...matches]
+            .filter(m => m.match_start_time)
+            .sort((a, b) => new Date(a.match_start_time!).getTime() - new Date(b.match_start_time!).getTime()),
+        [matches]
+    );
+
+    // Group into date buckets, then within each date assign stacking levels for close times
+    const positioned = useMemo(() => {
+        if (sorted.length === 0) return [];
+
+        const CLOSE_THRESHOLD_MS = 30 * 60 * 1000; // 30 min
+        const items: { match: typeof sorted[0]; dateLabel: string; level: number; isNewDate: boolean }[] = [];
+        let prevTime = 0;
+        let currentLevel = 0;
+        let prevDateLabel = '';
+
+        for (const m of sorted) {
+            const t = new Date(m.match_start_time!).getTime();
+            const dateLabel = new Date(m.match_start_time!).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+            const isNewDate = dateLabel !== prevDateLabel;
+
+            if (isNewDate) {
+                currentLevel = 0;
+            } else if (t - prevTime < CLOSE_THRESHOLD_MS) {
+                currentLevel++;
+            } else {
+                currentLevel = 0;
+            }
+
+            items.push({ match: m, dateLabel, level: currentLevel, isNewDate });
+            prevTime = t;
+            prevDateLabel = dateLabel;
+        }
+        return items;
+    }, [sorted]);
+
+    // Drag-to-scroll
+    const onMouseDown = useCallback((e: React.MouseEvent) => {
+        setIsDragging(true);
+        dragState.current = { startX: e.pageX - (scrollRef.current?.offsetLeft || 0), scrollLeft: scrollRef.current?.scrollLeft || 0 };
+    }, []);
+
+    const onMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!isDragging || !scrollRef.current) return;
+        e.preventDefault();
+        const x = e.pageX - (scrollRef.current.offsetLeft || 0);
+        const walk = (x - dragState.current.startX) * 1.5;
+        scrollRef.current.scrollLeft = dragState.current.scrollLeft - walk;
+    }, [isDragging]);
+
+    const onMouseUp = useCallback(() => setIsDragging(false), []);
+
+    if (positioned.length === 0) return null;
+
+    const getOpponent = (m: typeof sorted[0]) => m.team_a === baiyeName ? m.team_b : m.team_a;
+    const getTimeStr = (t?: string) => t ? new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+
+    const getResultStyle = (m: typeof sorted[0]) => {
+        if (!m.winner || m.winner === 'draw') return { border: 'border-neutral-600', bg: 'bg-neutral-800', glow: '' };
+        const won = m.winner === baiyeName;
+        return won
+            ? { border: 'border-green-500/50', bg: 'bg-green-950/40', glow: 'shadow-[0_0_8px_rgba(34,197,94,0.15)]' }
+            : { border: 'border-red-500/40', bg: 'bg-red-950/30', glow: 'shadow-[0_0_8px_rgba(239,68,68,0.1)]' };
+    };
+
+    const getTypeBadge = (t?: string) => {
+        if (t === '排位') return 'text-blue-400 bg-blue-500/15';
+        if (t === '正赛') return 'text-red-400 bg-red-500/15';
+        if (t === '约战') return 'text-green-400 bg-green-500/15';
+        return 'text-neutral-500 bg-neutral-700/50';
+    };
+
+    return (
+        <div className="max-w-6xl mx-auto mb-6">
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider">⏤ 时间轴</span>
+                <div className="flex-1 h-px bg-neutral-700" />
+                <span className="text-[10px] text-neutral-600">← 拖动滚动 →</span>
+            </div>
+            <div
+                ref={scrollRef}
+                className="overflow-x-auto pb-3 cursor-grab active:cursor-grabbing scrollbar-thin"
+                onMouseDown={onMouseDown}
+                onMouseMove={onMouseMove}
+                onMouseUp={onMouseUp}
+                onMouseLeave={onMouseUp}
+                style={{ scrollbarColor: '#525252 transparent' }}
+            >
+                <div className="flex items-end gap-1 min-w-max pl-2 pr-4" style={{ paddingTop: '60px' }}>
+                    {positioned.map(({ match: m, dateLabel, level, isNewDate }, idx) => {
+                        const opponent = getOpponent(m);
+                        const style = getResultStyle(m);
+                        const isActive = activeId === m.id;
+                        const won = m.winner === baiyeName;
+                        const lost = m.winner && m.winner !== 'draw' && m.winner !== baiyeName;
+
+                        return (
+                            <div key={m.id} className="flex flex-col items-center" style={{ marginTop: level > 0 ? `-${level * 52}px` : '0' }}>
+                                {/* Date marker */}
+                                {isNewDate && (
+                                    <div className="text-[10px] text-neutral-500 mb-1 font-bold whitespace-nowrap">
+                                        {dateLabel}
+                                    </div>
+                                )}
+                                {!isNewDate && level === 0 && <div className="h-4" />}
+
+                                {/* Card */}
+                                <button
+                                    onClick={() => onSelect(m.id)}
+                                    className={`relative flex flex-col items-center px-2.5 py-1.5 border ${style.border} ${style.bg} ${style.glow} 
+                                        transition-all duration-150 hover:scale-105 hover:z-10 min-w-[72px]
+                                        ${isActive ? 'ring-1 ring-yellow-500/60 scale-105 z-10' : ''}
+                                    `}
+                                >
+                                    {/* Win/Loss dot */}
+                                    <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full text-[7px] font-black flex items-center justify-center ${
+                                        won ? 'bg-green-500 text-black' : lost ? 'bg-red-500 text-white' : 'bg-neutral-600 text-neutral-400'
+                                    }`}>
+                                        {won ? 'W' : lost ? 'L' : '?'}
+                                    </div>
+
+                                    {/* Match type */}
+                                    <span className={`text-[9px] font-bold px-1 py-px mb-0.5 ${getTypeBadge(m.match_type)}`}>
+                                        {m.match_type || '排位'}
+                                    </span>
+
+                                    {/* Opponent */}
+                                    <span className="text-[11px] font-bold text-white whitespace-nowrap max-w-[64px] truncate" title={`vs ${opponent}`}>
+                                        vs {opponent.length > 5 ? opponent.slice(0, 5) + '..' : opponent}
+                                    </span>
+
+                                    {/* Time */}
+                                    <span className="text-[9px] text-neutral-500 mt-0.5">
+                                        {getTimeStr(m.match_start_time)}
+                                    </span>
+                                </button>
+
+                                {/* Connector tick to timeline */}
+                                {level === 0 && (
+                                    <div className="w-px h-2 bg-neutral-600" />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {/* Timeline axis line */}
+                <div className="h-px bg-gradient-to-r from-transparent via-neutral-600 to-transparent mx-2 -mt-0.5" />
+            </div>
+        </div>
+    );
+}
 
 interface MatchWithStats extends Match {
     stats_count: number;
@@ -30,6 +195,102 @@ const STAT_COLS: { key: keyof MatchStat; label: string }[] = [
     { key: "healing", label: "治疗" },
     { key: "building_damage", label: "建筑" },
 ];
+
+type SortDir = 'asc' | 'desc';
+interface SortState {
+    key: string;
+    dir: SortDir;
+}
+
+function toggleSort(current: SortState, key: string): SortState {
+    if (current.key === key) return { key, dir: current.dir === 'asc' ? 'desc' : 'asc' };
+    return { key, dir: 'desc' };
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+    if (!active) return <span className="text-neutral-700 ml-0.5">⇅</span>;
+    return <span className="text-yellow-400 ml-0.5">{dir === 'asc' ? '▲' : '▼'}</span>;
+}
+
+function SortableTeamTable({ teamName, stats, isOurTeam }: {
+    teamName: string;
+    stats: MatchStat[];
+    isOurTeam: boolean;
+}) {
+    const [sort, setSort] = useState<SortState>({ key: 'kills', dir: 'desc' });
+
+    const sortedStats = useMemo(() => {
+        const sorted = [...stats];
+        const { key, dir } = sort;
+        sorted.sort((a, b) => {
+            if (key === 'player_name') {
+                return dir === 'asc'
+                    ? a.player_name.localeCompare(b.player_name)
+                    : b.player_name.localeCompare(a.player_name);
+            }
+            const va = Number(a[key as keyof MatchStat]) || 0;
+            const vb = Number(b[key as keyof MatchStat]) || 0;
+            return dir === 'asc' ? va - vb : vb - va;
+        });
+        return sorted;
+    }, [stats, sort]);
+
+    if (stats.length === 0) {
+        return (
+            <div className="text-center text-sm text-neutral-500 py-4 border border-dashed border-neutral-700">
+                {teamName} · 暂无数据
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-2">
+            <h4 className={`text-sm font-bold uppercase flex items-center gap-2 ${
+                isOurTeam ? "text-yellow-500" : "text-blue-400"
+            }`}>
+                {isOurTeam ? "⭐" : "⚔️"} {teamName}
+                <span className="text-xs text-neutral-500 font-normal">({stats.length}人)</span>
+            </h4>
+            <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse min-w-[800px]">
+                    <thead>
+                        <tr className="border-b border-neutral-700">
+                            <th
+                                className="text-left py-2 px-2 text-neutral-500 uppercase cursor-pointer hover:text-white select-none transition-colors"
+                                onClick={() => setSort(toggleSort(sort, 'player_name'))}
+                            >
+                                玩家
+                                <SortIcon active={sort.key === 'player_name'} dir={sort.dir} />
+                            </th>
+                            {STAT_COLS.map((col) => (
+                                <th
+                                    key={col.key}
+                                    className="text-center py-2 px-1 text-neutral-500 cursor-pointer hover:text-white select-none transition-colors"
+                                    onClick={() => setSort(toggleSort(sort, col.key))}
+                                >
+                                    {col.label}
+                                    <SortIcon active={sort.key === col.key} dir={sort.dir} />
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sortedStats.map((s) => (
+                            <tr key={s.id} className="border-b border-neutral-800 hover:bg-neutral-800/50">
+                                <td className="py-1.5 px-2 font-bold text-white">{s.player_name}</td>
+                                {STAT_COLS.map((col) => (
+                                    <td key={col.key} className="py-1.5 px-1 text-center text-neutral-300">
+                                        {Number(s[col.key]).toLocaleString()}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
 
 export default function MatchHistoryPage() {
     const params = useParams();
@@ -166,50 +427,7 @@ export default function MatchHistoryPage() {
         );
     };
 
-    const renderTeamTable = (teamName: string, stats: MatchStat[], isOurTeam: boolean) => {
-        if (stats.length === 0) {
-            return (
-                <div className="text-center text-sm text-neutral-500 py-4 border border-dashed border-neutral-700">
-                    {teamName} · 暂无数据
-                </div>
-            );
-        }
 
-        return (
-            <div className="space-y-2">
-                <h4 className={`text-sm font-bold uppercase flex items-center gap-2 ${
-                    isOurTeam ? "text-yellow-500" : "text-blue-400"
-                }`}>
-                    {isOurTeam ? "⭐" : "⚔️"} {teamName}
-                    <span className="text-xs text-neutral-500 font-normal">({stats.length}人)</span>
-                </h4>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="border-b border-neutral-700">
-                                <th className="text-left py-2 px-2 text-neutral-500 uppercase">玩家</th>
-                                {STAT_COLS.map((col) => (
-                                    <th key={col.key} className="text-center py-2 px-1 text-neutral-500">{col.label}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {stats.map((s) => (
-                                <tr key={s.id} className="border-b border-neutral-800 hover:bg-neutral-800/50">
-                                    <td className="py-1.5 px-2 font-bold text-white">{s.player_name}</td>
-                                    {STAT_COLS.map((col) => (
-                                        <td key={col.key} className="py-1.5 px-1 text-center text-neutral-300">
-                                            {Number(s[col.key]).toLocaleString()}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        );
-    };
 
     if (loading) {
         return (
@@ -237,17 +455,32 @@ export default function MatchHistoryPage() {
                         {baiye?.name} 参与的所有对战 · 共 {matches.length} 场
                     </p>
                 </div>
-                {canSubmit && (
-                    <PixelButton onClick={() => router.push(`/baiye/${baiyeId}/stats`)}>
-                        📊 录入战绩
+                <div className="flex items-center gap-2">
+                    {canSubmit && (
+                        <PixelButton onClick={() => router.push(`/baiye/${baiyeId}/stats`)}>
+                            📊 战绩录入
+                        </PixelButton>
+                    )}
+                    <PixelButton onClick={() => router.push(`/baiye/${baiyeId}/card`)}>
+                        🎴 战场明信片
                     </PixelButton>
-                )}
+                </div>
             </header>
 
             {error && (
                 <div className="max-w-6xl mx-auto mb-4 bg-red-900/50 border-2 border-red-600 p-3 text-sm text-red-300">
                     ❌ {error}
                 </div>
+            )}
+
+            {/* ═══ Horizontal Timeline ═══ */}
+            {matches.length > 0 && baiye && (
+                <MatchTimeline
+                    matches={matches}
+                    baiyeName={baiye.name}
+                    onSelect={(id) => toggleDetail(id)}
+                    activeId={expandedId}
+                />
             )}
 
             <div className="max-w-6xl mx-auto space-y-3">
@@ -290,6 +523,15 @@ export default function MatchHistoryPage() {
                                         </div>
                                         <div className="text-xs text-neutral-500 mt-1 flex items-center gap-2">
                                             <span>{formatTime(m.match_start_time)}</span>
+                                            {m.match_type && (
+                                                <span className={`px-1.5 py-0.5 text-[10px] font-bold border ${
+                                                    m.match_type === '排位' ? 'text-blue-400 border-blue-500/30 bg-blue-500/10' :
+                                                    m.match_type === '正赛' ? 'text-red-400 border-red-500/30 bg-red-500/10' :
+                                                    'text-green-400 border-green-500/30 bg-green-500/10'
+                                                }`}>
+                                                    {m.match_type}
+                                                </span>
+                                            )}
                                             {m.notes && <span>· {m.notes}</span>}
                                         </div>
                                     </div>
@@ -399,17 +641,17 @@ export default function MatchHistoryPage() {
                                                 </div>
                                             )}
 
-                                            {renderTeamTable(
-                                                detail.match.team_a,
-                                                detail.team_a_stats,
-                                                detail.match.team_a === baiye?.name
-                                            )}
+                                            <SortableTeamTable
+                                                teamName={detail.match.team_a}
+                                                stats={detail.team_a_stats}
+                                                isOurTeam={detail.match.team_a === baiye?.name}
+                                            />
                                             <div className="border-t border-neutral-700" />
-                                            {renderTeamTable(
-                                                detail.match.team_b,
-                                                detail.team_b_stats,
-                                                detail.match.team_b === baiye?.name
-                                            )}
+                                            <SortableTeamTable
+                                                teamName={detail.match.team_b}
+                                                stats={detail.team_b_stats}
+                                                isOurTeam={detail.match.team_b === baiye?.name}
+                                            />
                                         </>
                                     ) : (
                                         <div className="text-sm text-neutral-500 text-center py-4">暂无数据</div>

@@ -1,7 +1,14 @@
 -- ═══════════════════════════════════════════════
--- 013: Match Screenshots Evidence Table
--- 记录每次提交对战数据时上传的截图，用于数据溯源
+-- 013: Match Screenshots + Match Type Tag
 -- ═══════════════════════════════════════════════
+
+-- PART A: Add match_type tag and coin_value to matches table
+ALTER TABLE public.baiyezhan_matches
+ADD COLUMN IF NOT EXISTS match_type text NOT NULL DEFAULT '排位';
+
+-- coin_value: 每局野怪价值，默认660，后续可能调整
+ALTER TABLE public.baiyezhan_matches
+ADD COLUMN IF NOT EXISTS coin_value integer NOT NULL DEFAULT 660;
 
 CREATE TABLE IF NOT EXISTS public.baiyezhan_match_screenshots (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,

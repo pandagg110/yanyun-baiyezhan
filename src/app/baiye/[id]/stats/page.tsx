@@ -52,6 +52,8 @@ export default function StatsUploadPage() {
         new Date(Date.now() - 30 * 60000).toISOString().slice(0, 16)
     );
     const [winner, setWinner] = useState<string | null>(null);
+    const [matchType, setMatchType] = useState("排位");
+    const [coinValue, setCoinValue] = useState(660);
     const [notes, setNotes] = useState("");
 
     const [isChecking, setIsChecking] = useState(false);
@@ -146,6 +148,8 @@ export default function StatsUploadPage() {
                     team_a: teamA.trim(),
                     team_b: teamB.trim(),
                     match_start_time: new Date(startTime).toISOString(),
+                    match_type: matchType,
+                    coin_value: coinValue,
                     winner: winner,
                     baiye_id: baiyeId,
                     notes: notes.trim() || undefined,
@@ -334,11 +338,10 @@ export default function StatsUploadPage() {
                     ].map((s, i) => (
                         <div key={s.id} className="flex items-center gap-2">
                             {i > 0 && <div className="w-8 h-0.5 bg-neutral-700" />}
-                            <div className={`px-3 py-1 border-2 font-bold uppercase text-xs transition-all ${
-                                step === s.id
-                                    ? "bg-yellow-500 text-black border-yellow-600"
-                                    : "bg-neutral-800 text-neutral-600 border-neutral-700"
-                            }`}>
+                            <div className={`px-3 py-1 border-2 font-bold uppercase text-xs transition-all ${step === s.id
+                                ? "bg-yellow-500 text-black border-yellow-600"
+                                : "bg-neutral-800 text-neutral-600 border-neutral-700"
+                                }`}>
                                 {s.label}
                             </div>
                         </div>
@@ -379,36 +382,68 @@ export default function StatsUploadPage() {
 
                             <div className="space-y-2">
                                 <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
+                                    对战类型
+                                </label>
+                                <div className="flex gap-2">
+                                    {["排位", "正赛", "约战"].map((t) => (
+                                        <button
+                                            key={t}
+                                            onClick={() => setMatchType(t)}
+                                            className={`flex-1 py-2.5 text-sm font-bold border-2 transition-all ${matchType === t
+                                                ? "bg-yellow-500 border-yellow-600 text-black shadow-[2px_2px_0_0_#000]"
+                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                                }`}
+                                        >
+                                            {t === "排位" ? "🏅" : t === "正赛" ? "⚔️" : "🤝"} {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
+                                    💰 野怪价值
+                                </label>
+                                <input
+                                    type="number"
+                                    value={coinValue}
+                                    onChange={(e) => setCoinValue(Number(e.target.value) || 660)}
+                                    min={0}
+                                    step={10}
+                                    className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                />
+                                <p className="text-[10px] text-neutral-600">默认660，后续可能调整</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
                                     胜利方
                                 </label>
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => setWinner(teamA.trim() || null)}
-                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${
-                                            winner === teamA.trim() && winner
-                                                ? "bg-green-500 border-green-600 text-black shadow-[2px_2px_0_0_#000]"
-                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
-                                        }`}
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${winner === teamA.trim() && winner
+                                            ? "bg-green-500 border-green-600 text-black shadow-[2px_2px_0_0_#000]"
+                                            : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                            }`}
                                     >
                                         🏆 {teamA || "A"} 胜
                                     </button>
                                     <button
                                         onClick={() => setWinner(teamB.trim() || null)}
-                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${
-                                            winner === teamB.trim() && winner
-                                                ? "bg-green-500 border-green-600 text-black shadow-[2px_2px_0_0_#000]"
-                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
-                                        }`}
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${winner === teamB.trim() && winner
+                                            ? "bg-green-500 border-green-600 text-black shadow-[2px_2px_0_0_#000]"
+                                            : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                            }`}
                                     >
                                         🏆 {teamB || "B"} 胜
                                     </button>
                                     <button
                                         onClick={() => setWinner("draw")}
-                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${
-                                            winner === "draw"
-                                                ? "bg-yellow-500 border-yellow-600 text-black shadow-[2px_2px_0_0_#000]"
-                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
-                                        }`}
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${winner === "draw"
+                                            ? "bg-yellow-500 border-yellow-600 text-black shadow-[2px_2px_0_0_#000]"
+                                            : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                            }`}
                                     >
                                         🤝 平局
                                     </button>
@@ -449,11 +484,10 @@ export default function StatsUploadPage() {
                 {step === "upload-ocr" && matchRecord && (
                     <div className="space-y-6">
                         {/* Match Status Banner */}
-                        <div className={`p-4 border-2 font-bold text-sm ${
-                            matchStatus === "exists"
-                                ? "bg-blue-900/30 border-blue-500 text-blue-300"
-                                : "bg-green-900/30 border-green-500 text-green-300"
-                        }`}>
+                        <div className={`p-4 border-2 font-bold text-sm ${matchStatus === "exists"
+                            ? "bg-blue-900/30 border-blue-500 text-blue-300"
+                            : "bg-green-900/30 border-green-500 text-green-300"
+                            }`}>
                             {matchStatus === "exists"
                                 ? `📌 对局已存在：${matchRecord.team_a} vs ${matchRecord.team_b}`
                                 : `✅ 对局已创建：${matchRecord.team_a} vs ${matchRecord.team_b}`}
@@ -480,13 +514,12 @@ export default function StatsUploadPage() {
                                             key={name}
                                             onClick={() => !alreadyDone && setSelectedTeam(name)}
                                             disabled={alreadyDone}
-                                            className={`flex-1 py-4 text-sm font-bold border-2 transition-all relative ${
-                                                alreadyDone
-                                                    ? "bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed"
-                                                    : selectedTeam === name
+                                            className={`flex-1 py-4 text-sm font-bold border-2 transition-all relative ${alreadyDone
+                                                ? "bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed"
+                                                : selectedTeam === name
                                                     ? "bg-yellow-500 text-black border-yellow-600 shadow-[3px_3px_0_0_#000]"
                                                     : "bg-neutral-700 text-white border-neutral-600 hover:border-yellow-500"
-                                            }`}
+                                                }`}
                                         >
                                             {alreadyDone ? "✅ " : selectedTeam === name ? "▶ " : ""}
                                             {name}
@@ -538,11 +571,10 @@ export default function StatsUploadPage() {
                                             onDragLeave={handleDragLeave}
                                             onDrop={handleDrop}
                                             onClick={() => fileInputRef.current?.click()}
-                                            className={`border-4 border-dashed p-12 text-center cursor-pointer transition-all ${
-                                                isDragging
-                                                    ? "border-yellow-500 bg-yellow-500/10"
-                                                    : "border-neutral-700 bg-neutral-800/50 hover:border-neutral-500"
-                                            }`}
+                                            className={`border-4 border-dashed p-12 text-center cursor-pointer transition-all ${isDragging
+                                                ? "border-yellow-500 bg-yellow-500/10"
+                                                : "border-neutral-700 bg-neutral-800/50 hover:border-neutral-500"
+                                                }`}
                                         >
                                             <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
                                             <div className="text-4xl mb-4">📷</div>
@@ -581,7 +613,7 @@ export default function StatsUploadPage() {
                                         {isOcring && (
                                             <div className="flex items-center gap-3 text-sm text-yellow-500">
                                                 <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent animate-spin" />
-                                                正在上传截图并调用 AI 识别数据...
+                                                正在上传截图并调用 AI 识别数据，大约耗时1分钟...
                                             </div>
                                         )}
                                     </>

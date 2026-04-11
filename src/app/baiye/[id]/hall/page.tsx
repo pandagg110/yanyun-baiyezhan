@@ -187,10 +187,10 @@ export default function BaiyeHallPage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => router.push(`/baiye/${baiyeId}/stats`)}
+                        onClick={() => router.push(`/baiye/${baiyeId}/card`)}
                         className="text-xs text-green-400 hover:text-green-300 font-bold uppercase transition-colors"
                     >
-                        [ 📊 战绩录入 ]
+                        [ 🎴 战场明信片 ]
                     </button>
                     <button
                         onClick={() => router.push("/profile")}
@@ -211,18 +211,24 @@ export default function BaiyeHallPage() {
                         </div>
                         <div className="flex flex-col gap-2">
                             {(user?.role === 'admin' || user?.role === 'vip') && (
-                            <button
-                                onClick={() => router.push(`/baiye/${baiyeId}/stats`)}
-                                className="w-full py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold text-sm border-2 border-yellow-700 hover:from-yellow-400 hover:to-yellow-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
-                            >
-                                📊 战绩录入
-                            </button>
+                                <button
+                                    onClick={() => router.push(`/baiye/${baiyeId}/stats`)}
+                                    className="w-full py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold text-sm border-2 border-yellow-700 hover:from-yellow-400 hover:to-yellow-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                                >
+                                    📊 战绩录入
+                                </button>
                             )}
                             <button
                                 onClick={() => router.push(`/baiye/${baiyeId}/matches`)}
                                 className="w-full py-3 bg-neutral-700 text-white font-bold text-sm border-2 border-neutral-600 hover:bg-neutral-600 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
                             >
                                 📋 对战记录
+                            </button>
+                            <button
+                                onClick={() => router.push(`/baiye/${baiyeId}/analysis`)}
+                                className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold text-sm border-2 border-cyan-700 hover:from-cyan-500 hover:to-blue-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                            >
+                                📈 对战分析
                             </button>
                         </div>
                     </PixelCard>

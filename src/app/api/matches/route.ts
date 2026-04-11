@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
 
         // ─── Mode 1: Create or find match ───
         const {
-            team_a, team_b, match_start_time,
+            team_a, team_b, match_start_time, match_type, coin_value,
             winner, baiye_id, notes, created_by,
         } = body;
 
@@ -175,6 +175,8 @@ export async function POST(request: NextRequest) {
                 team_a,
                 team_b,
                 match_start_time: new Date(match_start_time).toISOString(),
+                match_type: match_type || '排位',
+                coin_value: coin_value ?? 660,
                 winner: winner || null,
                 notes: notes || null,
                 created_by: created_by || null,
