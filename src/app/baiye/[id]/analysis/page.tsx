@@ -17,8 +17,10 @@ interface PlayerAgg {
     total_coins: number;
     total_coin_value: number;
     total_building_damage: number;
+    total_healing: number;
     avg_coin_ratio: number;    // avg(coins / coin_value)
     avg_building: number;      // avg building_damage
+    avg_healing: number;       // avg healing
     kda: number;               // kills / max(deaths, 1)
 }
 
@@ -74,7 +76,20 @@ const CHART_METRICS = [
     { key: "coin_ratio", label: "拿野", color: "#facc15" },
     { key: "building", label: "塔伤", color: "#f97316" },
     { key: "kda", label: "KD", color: "#22d3ee" },
+    { key: "healing", label: "治疗", color: "#34d399" },
 ] as const;
+
+// Comparison player colors — muted to not overpower the primary line
+const COMPARE_COLORS = [
+    "#a78bfa", // violet
+    "#34d399", // emerald
+    "#fb923c", // orange
+    "#f472b6", // pink
+    "#60a5fa", // blue
+    "#fbbf24", // amber
+    "#4ade80", // green
+    "#e879f9", // fuchsia
+];
 
 type DetailSortKey = 'player_name' | 'coin_ratio' | 'building_damage' | 'kda' | 'kills' | 'assists' | 'deaths' | 'coins' | 'damage' | 'damage_taken' | 'healing';
 
@@ -326,13 +341,16 @@ export default function AnalysisPage() {
 
     // Selected player for chart view
     const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
-    const [chartMetric, setChartMetric] = useState<"coin_ratio" | "building" | "kda">("kda");
+    // Comparison players for overlay on the trend chart
+    const [comparePlayers, setComparePlayers] = useState<string[]>([]);
+    const [compareDropdownOpen, setCompareDropdownOpen] = useState(false);
+    const [chartMetric, setChartMetric] = useState<"coin_ratio" | "building" | "kda" | "healing">("kda");
 
     // Expanded match in per-match section
     const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
     // ── Sort states ──
-    type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'kda' | 'total_kills' | 'total_assists' | 'total_deaths';
+    type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kda' | 'total_kills' | 'total_assists' | 'total_deaths';
     const [playerSort, setPlayerSort] = useState<SortState<PlayerSortKey>>({ key: 'kda', dir: 'desc' });
 
 
@@ -385,7 +403,7 @@ export default function AnalysisPage() {
             matches: Set<string>;
             kills: number; assists: number; deaths: number;
             coins: number; coinValues: number;
-            building: number;
+            building: number; healing: number;
             coinRatios: number[];
         }>();
 
@@ -399,7 +417,7 @@ export default function AnalysisPage() {
             if (!playerMap.has(s.player_name)) {
                 playerMap.set(s.player_name, {
                     matches: new Set(), kills: 0, assists: 0, deaths: 0,
-                    coins: 0, coinValues: 0, building: 0, coinRatios: [],
+                    coins: 0, coinValues: 0, building: 0, healing: 0, coinRatios: [],
                 });
             }
             const p = playerMap.get(s.player_name)!;
@@ -410,6 +428,7 @@ export default function AnalysisPage() {
             p.coins += s.coins || 0;
             p.coinValues += coinValue;
             p.building += s.building_damage || 0;
+            p.healing += s.healing || 0;
             p.coinRatios.push((s.coins || 0) / coinValue);
         }
 
@@ -425,8 +444,10 @@ export default function AnalysisPage() {
                 total_coins: p.coins,
                 total_coin_value: p.coinValues,
                 total_building_damage: p.building,
+                total_healing: p.healing,
                 avg_coin_ratio: p.coinRatios.reduce((a, b) => a + b, 0) / n,
                 avg_building: p.building / n,
+                avg_healing: p.healing / n,
                 kda: p.kills / Math.max(p.deaths, 1),
             });
         }
@@ -448,12 +469,10 @@ export default function AnalysisPage() {
     }, [playerAggs, playerSort]);
 
     // ── Per-player match data (for charts + list) ──
-    const playerMatchData = useMemo((): PerMatchPlayer[] => {
-        if (!selectedPlayer) return [];
+    const buildPlayerMatchData = useCallback((playerName: string): PerMatchPlayer[] => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
-
         return stats
-            .filter(s => s.player_name === selectedPlayer && s.team_name === baiye?.name)
+            .filter(s => s.player_name === playerName && s.team_name === baiye?.name)
             .map(s => {
                 const m = matchMap.get(s.match_id);
                 if (!m) return null;
@@ -467,7 +486,31 @@ export default function AnalysisPage() {
             })
             .filter(Boolean)
             .sort((a, b) => new Date(a!.match.match_start_time!).getTime() - new Date(b!.match.match_start_time!).getTime()) as PerMatchPlayer[];
-    }, [selectedPlayer, stats, matches, baiye?.name]);
+    }, [stats, matches, baiye?.name]);
+
+    const playerMatchData = useMemo((): PerMatchPlayer[] => {
+        if (!selectedPlayer) return [];
+        return buildPlayerMatchData(selectedPlayer);
+    }, [selectedPlayer, buildPlayerMatchData]);
+
+    // Build comparison player data — keyed by match_id for alignment
+    const comparePlayersData = useMemo(() => {
+        return comparePlayers.map((name, idx) => ({
+            name,
+            color: COMPARE_COLORS[idx % COMPARE_COLORS.length],
+            data: buildPlayerMatchData(name),
+        }));
+    }, [comparePlayers, buildPlayerMatchData]);
+
+    // Available players for comparison dropdown (exclude the selected player, and already compared)
+    const availableComparePlayers = useMemo(() => {
+        if (!selectedPlayer) return [];
+        const excluded = new Set([selectedPlayer, ...comparePlayers]);
+        return playerAggs
+            .map(p => p.player_name)
+            .filter(n => !excluded.has(n))
+            .sort((a, b) => a.localeCompare(b));
+    }, [selectedPlayer, comparePlayers, playerAggs]);
 
     // ── Per-match aggregation (for bottom section) ──
     const matchAggs = useMemo(() => {
@@ -504,7 +547,7 @@ export default function AnalysisPage() {
         });
     }, [matches, stats, baiye?.name]);
 
-    // ── Chart rendering (SVG) ──
+    // ── Chart rendering (SVG) — with comparison support ──
     const renderChart = () => {
         if (playerMatchData.length < 2) {
             return (
@@ -514,29 +557,49 @@ export default function AnalysisPage() {
             );
         }
 
-        const data = playerMatchData.map(d => {
+        const getMetricValue = (d: PerMatchPlayer) => {
             if (chartMetric === "coin_ratio") return d.coin_ratio;
             if (chartMetric === "building") return d.stat.building_damage || 0;
+            if (chartMetric === "healing") return d.stat.healing || 0;
             return d.kda;
+        };
+
+        const primaryData = playerMatchData.map(getMetricValue);
+
+        // Build comparison lines aligned to the same match sequence
+        const primaryMatchIds = playerMatchData.map(d => d.match.id);
+        const compareLines = comparePlayersData.map(cp => {
+            const dataMap = new Map(cp.data.map(d => [d.match.id, d]));
+            // For each primary match, find the comparison player's data
+            const values = primaryMatchIds.map(mId => {
+                const d = dataMap.get(mId);
+                return d ? getMetricValue(d) : null;
+            });
+            return { name: cp.name, color: cp.color, values };
         });
 
         const metaInfo = CHART_METRICS.find(m => m.key === chartMetric)!;
-        const W = 800, H = 280, PX = 60, PY = 30;
-        const plotW = W - PX * 2, plotH = H - PY * 2;
+        const W = 800, H = 320, PX = 60, PY = 30;
+        const plotW = W - PX * 2, plotH = H - PY * 2 - 20;
 
-        const maxVal = Math.max(...data) * 1.1 || 1;
-        const minVal = Math.min(...data) * 0.9;
+        // Compute global min/max across primary + all comparison lines
+        const allValues = [...primaryData];
+        for (const cl of compareLines) {
+            for (const v of cl.values) { if (v !== null) allValues.push(v); }
+        }
+        const maxVal = Math.max(...allValues) * 1.1 || 1;
+        const minVal = Math.min(...allValues) * 0.9;
         const range = maxVal - minVal || 1;
 
-        const points = data.map((v, i) => ({
-            x: PX + (i / (data.length - 1)) * plotW,
-            y: PY + plotH - ((v - minVal) / range) * plotH,
-            value: v,
-            match: playerMatchData[i].match,
+        const toY = (v: number) => PY + plotH - ((v - minVal) / range) * plotH;
+        const toX = (i: number) => PX + (i / (primaryData.length - 1)) * plotW;
+
+        const primaryPoints = primaryData.map((v, i) => ({
+            x: toX(i), y: toY(v), value: v, match: playerMatchData[i].match,
         }));
 
-        const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        const areaD = pathD + ` L ${points[points.length - 1].x} ${PY + plotH} L ${points[0].x} ${PY + plotH} Z`;
+        const primaryPathD = primaryPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        const primaryAreaD = primaryPathD + ` L ${primaryPoints[primaryPoints.length - 1].x} ${PY + plotH} L ${primaryPoints[0].x} ${PY + plotH} Z`;
 
         // Y-axis ticks
         const yTicks = 5;
@@ -545,26 +608,70 @@ export default function AnalysisPage() {
             return { val, y: PY + plotH - (i / (yTicks - 1)) * plotH };
         });
 
+        const bigNumMetric = chartMetric === "building" || chartMetric === "healing";
+        const fmtVal = (v: number) => bigNumMetric ? (v / 1000000).toFixed(2) + "M" : v.toFixed(2);
+        const fmtAxis = (v: number) => bigNumMetric ? (v / 1000000).toFixed(1) + "M" : v.toFixed(2);
+
         return (
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 300 }}>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 340 }}>
                 {/* Grid lines */}
                 {yLabels.map((yl, i) => (
                     <g key={i}>
                         <line x1={PX} y1={yl.y} x2={W - PX} y2={yl.y} stroke="#333" strokeWidth={0.5} />
                         <text x={PX - 8} y={yl.y + 4} fill="#666" fontSize={10} textAnchor="end">
-                            {chartMetric === "building" ? (yl.val / 1000000).toFixed(1) + "M" : yl.val.toFixed(2)}
+                            {fmtAxis(yl.val)}
                         </text>
                     </g>
                 ))}
 
-                {/* Area fill */}
-                <path d={areaD} fill={metaInfo.color} fillOpacity={0.08} />
+                {/* ── Comparison player lines (render behind primary) ── */}
+                {compareLines.map((cl, ci) => {
+                    // Build path segments, skipping nulls
+                    const segments: { x: number; y: number; value: number }[][] = [];
+                    let current: { x: number; y: number; value: number }[] = [];
+                    cl.values.forEach((v, i) => {
+                        if (v !== null) {
+                            current.push({ x: toX(i), y: toY(v), value: v });
+                        } else if (current.length > 0) {
+                            segments.push(current); current = [];
+                        }
+                    });
+                    if (current.length > 0) segments.push(current);
 
-                {/* Line */}
-                <path d={pathD} fill="none" stroke={metaInfo.color} strokeWidth={2.5} strokeLinejoin="round" />
+                    return (
+                        <g key={`cmp-${ci}`}>
+                            {segments.map((seg, si) => {
+                                if (seg.length < 2) {
+                                    // Single point — just a dot
+                                    return seg.map((pt, pi) => (
+                                        <circle key={`${si}-${pi}`} cx={pt.x} cy={pt.y} r={3}
+                                            fill={cl.color} fillOpacity={0.7} stroke="#111" strokeWidth={1.5} />
+                                    ));
+                                }
+                                const segPath = seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                                return (
+                                    <g key={si}>
+                                        <path d={segPath} fill="none" stroke={cl.color} strokeWidth={1.5}
+                                            strokeLinejoin="round" strokeDasharray="6 3" opacity={0.7} />
+                                        {seg.map((pt, pi) => (
+                                            <circle key={pi} cx={pt.x} cy={pt.y} r={3}
+                                                fill={cl.color} fillOpacity={0.7} stroke="#111" strokeWidth={1.5} />
+                                        ))}
+                                    </g>
+                                );
+                            })}
+                        </g>
+                    );
+                })}
 
-                {/* Points + labels */}
-                {points.map((p, i) => (
+                {/* Primary area fill */}
+                <path d={primaryAreaD} fill={metaInfo.color} fillOpacity={0.08} />
+
+                {/* Primary line */}
+                <path d={primaryPathD} fill="none" stroke={metaInfo.color} strokeWidth={2.5} strokeLinejoin="round" />
+
+                {/* Primary points + labels */}
+                {primaryPoints.map((p, i) => (
                     <g key={i}>
                         <circle cx={p.x} cy={p.y} r={4} fill={metaInfo.color} stroke="#111" strokeWidth={2} />
                         {/* Match label below */}
@@ -577,7 +684,7 @@ export default function AnalysisPage() {
                         </text>
                         {/* Value above */}
                         <text x={p.x} y={p.y - 10} fill={metaInfo.color} fontSize={9} textAnchor="middle" fontWeight="bold">
-                            {chartMetric === "building" ? (p.value / 1000000).toFixed(2) + "M" : p.value.toFixed(2)}
+                            {fmtVal(p.value)}
                         </text>
                     </g>
                 ))}
@@ -752,6 +859,7 @@ export default function AnalysisPage() {
                                             { key: 'matches_played' as const, label: '场数' },
                                             { key: 'avg_coin_ratio' as const, label: '拿野', sub: 'coin/价值', color: 'text-yellow-500' },
                                             { key: 'avg_building' as const, label: '平均塔伤', color: 'text-orange-400' },
+                                            { key: 'avg_healing' as const, label: '平均治疗', color: 'text-emerald-400' },
                                             { key: 'kda' as const, label: 'KD', sub: 'K/D', color: 'text-cyan-400' },
                                         ]).map(col => (
                                             <th
@@ -811,6 +919,11 @@ export default function AnalysisPage() {
                                                     </span>
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
+                                                    <span className="text-xs font-bold text-emerald-400">
+                                                        {formatNum(p.avg_healing)}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-2 text-center">
                                                     <span className={`text-xs font-bold px-2 py-0.5 ${
                                                         p.kda >= 10 ? "text-cyan-300 bg-cyan-500/10" :
                                                         p.kda >= 5 ? "text-cyan-400" :
@@ -855,9 +968,12 @@ export default function AnalysisPage() {
                             <div className="flex items-center justify-between px-5 py-4 border-b-2 border-cyan-400/20 shrink-0">
                                 <h3 className="text-sm font-bold text-cyan-400 uppercase">
                                     📊 {selectedPlayer} 趋势曲线
+                                    {comparePlayers.length > 0 && (
+                                        <span className="text-neutral-500 font-normal ml-2">vs {comparePlayers.length} 名玩家</span>
+                                    )}
                                 </h3>
                                 <button
-                                    onClick={() => setSelectedPlayer(null)}
+                                    onClick={() => { setSelectedPlayer(null); setComparePlayers([]); setCompareDropdownOpen(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/10 transition-colors text-lg"
                                 >
                                     ✕
@@ -884,6 +1000,86 @@ export default function AnalysisPage() {
                                     ))}
                                 </div>
 
+                                {/* ── Add comparison players ── */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {/* Existing comparison tags */}
+                                    {comparePlayers.map((cp, idx) => (
+                                        <span
+                                            key={cp}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold border transition-all"
+                                            style={{
+                                                borderColor: COMPARE_COLORS[idx % COMPARE_COLORS.length] + '60',
+                                                backgroundColor: COMPARE_COLORS[idx % COMPARE_COLORS.length] + '15',
+                                                color: COMPARE_COLORS[idx % COMPARE_COLORS.length],
+                                            }}
+                                        >
+                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COMPARE_COLORS[idx % COMPARE_COLORS.length] }} />
+                                            {cp}
+                                            <button
+                                                onClick={() => setComparePlayers(prev => prev.filter(p => p !== cp))}
+                                                className="ml-0.5 hover:opacity-70 text-[10px]"
+                                            >✕</button>
+                                        </span>
+                                    ))}
+
+                                    {/* Add button with dropdown */}
+                                    {availableComparePlayers.length > 0 && (
+                                        <div className="relative">
+                                            <button
+                                                onClick={() => setCompareDropdownOpen(v => !v)}
+                                                className={`px-3 py-1.5 text-xs font-bold border-2 border-dashed transition-all ${
+                                                    compareDropdownOpen
+                                                        ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
+                                                        : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
+                                                }`}
+                                            >
+                                                + 添加对比玩家
+                                            </button>
+                                            {compareDropdownOpen && (
+                                                <div className="absolute top-full left-0 mt-1 z-20 bg-neutral-800 border border-neutral-600 shadow-xl max-h-48 overflow-y-auto min-w-[160px]" style={{ scrollbarColor: '#525252 transparent' }}>
+                                                    {availableComparePlayers.map(name => (
+                                                        <button
+                                                            key={name}
+                                                            onClick={() => {
+                                                                setComparePlayers(prev => [...prev, name]);
+                                                                setCompareDropdownOpen(false);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-xs text-neutral-300 hover:bg-white/10 hover:text-white transition-colors"
+                                                        >
+                                                            {name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {comparePlayers.length > 0 && (
+                                        <button
+                                            onClick={() => setComparePlayers([])}
+                                            className="px-2 py-1 text-[10px] text-neutral-500 hover:text-red-400 transition-colors"
+                                        >
+                                            清空对比
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Legend */}
+                                {comparePlayers.length > 0 && (
+                                    <div className="flex items-center gap-3 text-[10px] text-neutral-500 pt-1">
+                                        <span className="flex items-center gap-1">
+                                            <span className="w-4 h-0.5 inline-block" style={{ backgroundColor: CHART_METRICS.find(m => m.key === chartMetric)?.color }} />
+                                            {selectedPlayer} (主线)
+                                        </span>
+                                        {comparePlayers.map((cp, idx) => (
+                                            <span key={cp} className="flex items-center gap-1">
+                                                <span className="w-4 h-0.5 inline-block border-b border-dashed" style={{ borderColor: COMPARE_COLORS[idx % COMPARE_COLORS.length] }} />
+                                                {cp}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* SVG Chart */}
                                 <div className="bg-neutral-900/50 border border-neutral-700 p-4 rounded">
                                     {renderChart()}
@@ -894,23 +1090,57 @@ export default function AnalysisPage() {
                                     <h4 className="text-xs font-bold text-neutral-400 uppercase pt-2">
                                         逐场数据 ({playerMatchData.length} 场)
                                     </h4>
-                                    {playerMatchData.map((d, i) => (
-                                        <div key={i} className="flex items-center gap-3 py-2 px-3 bg-neutral-900/30 border border-neutral-800 text-xs hover:border-neutral-700 transition-colors">
-                                            <span className="text-neutral-600 w-5">{i + 1}</span>
-                                            <span className="text-neutral-400 w-24 shrink-0">{formatTime(d.match.match_start_time)}</span>
-                                            <span className="text-white font-bold flex-1 min-w-0 truncate">
-                                                {d.match.team_a} <span className="text-neutral-600">vs</span> {d.match.team_b}
-                                            </span>
-                                            <div className="flex gap-4 shrink-0">
-                                                <span className="text-yellow-500" title="拿野">🐉 {d.coin_ratio.toFixed(2)}</span>
-                                                <span className="text-orange-400" title="塔伤">🏛 {formatNum(d.stat.building_damage || 0)}</span>
-                                                <span className="text-cyan-400" title="KDA">⚔ {d.kda.toFixed(2)}</span>
+                                    {playerMatchData.map((d, i) => {
+                                        // Find comparison players' data for this match
+                                        const cpDataForMatch = comparePlayersData.map(cp => {
+                                            const found = cp.data.find(cd => cd.match.id === d.match.id);
+                                            return found ? { name: cp.name, color: cp.color, data: found } : null;
+                                        }).filter(Boolean) as { name: string; color: string; data: PerMatchPlayer }[];
+
+                                        return (
+                                            <div key={i} className="border border-neutral-800 hover:border-neutral-700 transition-colors">
+                                                {/* Primary player row */}
+                                                <div className="flex items-center gap-3 py-2 px-3 bg-neutral-900/30 text-xs">
+                                                    <span className="text-neutral-600 w-5">{i + 1}</span>
+                                                    <span className="text-neutral-400 w-24 shrink-0">{formatTime(d.match.match_start_time)}</span>
+                                                    <span className="text-white font-bold flex-1 min-w-0 truncate">
+                                                        {d.match.team_a} <span className="text-neutral-600">vs</span> {d.match.team_b}
+                                                    </span>
+                                                    <div className="flex gap-4 shrink-0">
+                                                        <span className="text-yellow-500" title="拿野">🐉 {d.coin_ratio.toFixed(2)}</span>
+                                                        <span className="text-orange-400" title="塔伤">🏛 {formatNum(d.stat.building_damage || 0)}</span>
+                                                        <span className="text-emerald-400" title="治疗">💊 {formatNum(d.stat.healing || 0)}</span>
+                                                        <span className="text-cyan-400" title="KD">⚔ {d.kda.toFixed(2)}</span>
+                                                    </div>
+                                                    <span className="text-neutral-600 w-20 text-right shrink-0">
+                                                        {d.stat.kills}/{d.stat.assists}/{d.stat.deaths}
+                                                    </span>
+                                                </div>
+                                                {/* Comparison player rows for same match */}
+                                                {cpDataForMatch.map(cp => (
+                                                    <div key={cp.name} className="flex items-center gap-3 py-1.5 px-3 text-xs border-t border-neutral-800/50"
+                                                        style={{ backgroundColor: cp.color + '08' }}
+                                                    >
+                                                        <span className="w-5" />
+                                                        <span className="w-24 shrink-0 flex items-center gap-1">
+                                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cp.color }} />
+                                                            <span className="truncate" style={{ color: cp.color }}>{cp.name}</span>
+                                                        </span>
+                                                        <span className="flex-1" />
+                                                        <div className="flex gap-4 shrink-0">
+                                                            <span style={{ color: cp.color + 'cc' }} title="拿野">🐉 {cp.data.coin_ratio.toFixed(2)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="塔伤">🏛 {formatNum(cp.data.stat.building_damage || 0)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="治疗">💊 {formatNum(cp.data.stat.healing || 0)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="KD">⚔ {cp.data.kda.toFixed(2)}</span>
+                                                        </div>
+                                                        <span style={{ color: cp.color + '99' }} className="w-20 text-right shrink-0">
+                                                            {cp.data.stat.kills}/{cp.data.stat.assists}/{cp.data.stat.deaths}
+                                                        </span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                            <span className="text-neutral-600 w-20 text-right shrink-0">
-                                                {d.stat.kills}/{d.stat.assists}/{d.stat.deaths}
-                                            </span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
