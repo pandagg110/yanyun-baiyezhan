@@ -6,7 +6,7 @@ import { SupabaseService } from "@/services/supabase-service";
 import { Baiye, Match, MatchStat, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import html2canvas from "html2canvas";
+import domtoimage from 'dom-to-image-more';
 
 // ─── Types ───
 interface PlayerAgg {
@@ -20,11 +20,15 @@ interface PlayerAgg {
     total_building_damage: number;
     total_damage: number;
     total_healing: number;
+    total_damage_taken: number;
     avg_coin_ratio: number;
     avg_building: number;
     avg_damage: number;
     avg_kills: number;
     avg_healing: number;
+    avg_damage_taken: number;
+    avg_assists: number;
+    avg_deaths: number;
     kda: number;
 }
 
@@ -61,6 +65,62 @@ function formatNum(n: number) {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
     if (n >= 1000) return (n / 1000).toFixed(1) + "K";
     return n.toFixed(0);
+}
+
+// ─── 称号系统 ───
+// 阈值（所有伤害类单位为原始值，治疗 200W = 2_000_000）
+function getTitle(p: PlayerAgg): string {
+    if (p.matches_played === 0) return "无名之辈";
+
+    const K  = p.avg_kills;           // 场均击杀
+    const D  = p.avg_deaths;          // 场均死亡
+    const A  = p.avg_assists;         // 场均助攻
+    const DMG = p.avg_damage;         // 场均对玩家伤害
+    const HEL = p.avg_healing;        // 场均治疗
+    const BLD = p.avg_building;       // 场均塔伤
+    const TKN = p.avg_damage_taken;   // 场均承伤
+    const CR  = p.avg_coin_ratio;     // 场均拿野比例
+
+    // 奇迹行者：拿野极强
+    if (CR >= 0.9) return "奇迹行者";
+
+    // 走哪算哪：拿野极弱
+    if (CR <= 0.25 && K < 12) return "走哪算哪";
+
+    // 冬瓜菜刀：高击杀 + 少死亡 + 高助攻 + 治疗低
+    if (K >= 20 && D < 10 && A > 30 && HEL < 1_000_000) return "冬瓜菜刀";
+
+    // 冬瓜臊子：低击杀 + 多死亡 + 助攻一般 + 治疗低
+    if (K < 10 && D > 25 && A >= 20 && A <= 35 && HEL < 1_000_000) return "冬瓜臊子";
+
+    // 比比拉布（吉祥物）：死亡高 + 啥都低
+    if (D > 20 && K < 10 && HEL < 800_000 && DMG < 3_000_000 && BLD < 1_000_000) return "比比拉布";
+
+    // 五代目火影：输出高 + 死亡少 + 承伤高 + 助攻高 + 治疗高 + 塔伤可观
+    if (DMG >= 6_000_000 && D < 12 && TKN >= 4_000_000 && A > 25 && HEL >= 1_500_000 && BLD >= 1_500_000) return "五代目火影";
+
+    // 老毛子：击杀少 + 玩家伤害高 + 死亡少 + 助攻高 + 治疗低
+    if (K < 15 && DMG >= 5_000_000 && D < 12 && A > 25 && HEL < 1_000_000) return "老毛子";
+
+    // M（搬树的）：击杀低 + 死亡少 + 承伤极高 + 助攻高 + 治疗较低
+    if (K < 12 && D < 12 && TKN >= 6_000_000 && A > 25 && HEL < 2_000_000) return "M";
+
+    // 抽水马桶：击杀低 + 死亡少 + 承伤高 + 助攻极高 + 治疗低
+    if (K < 12 && D < 12 && TKN >= 4_000_000 && A > 35 && HEL < 1_000_000) return "抽水马桶";
+
+    // 爹：击杀低 + 死亡少 + 承伤高 + 助攻低 + 治疗极高
+    if (K < 12 && D < 12 && TKN >= 4_000_000 && A < 20 && HEL >= 3_000_000) return "爹";
+
+    // 我的刀盾：击杀低 + 死亡少 + 承伤高 + 助攻一般 + 治疗低 + 塔伤高
+    if (K < 12 && D < 12 && TKN >= 4_000_000 && A >= 20 && A <= 35 && HEL < 1_000_000 && BLD >= 2_000_000) return "我的刀盾";
+
+    // 搅屎棍子：击杀低 + 死亡少 + 承伤高 + 助攻高 + 治疗低
+    if (K < 12 && D < 12 && TKN >= 4_000_000 && A > 25 && HEL < 1_000_000) return "搅屎棍子";
+
+    // 咕咕嘎嘎：各项都低
+    if (K < 10 && D >= 10 && DMG < 3_000_000 && HEL < 800_000 && BLD < 1_000_000) return "咕咕嘎嘎";
+
+    return "无名之辈";
 }
 
 // ─── Particle Effect ───
@@ -211,8 +271,10 @@ export default function CardGeneratorPage() {
                     total_kills: 0, total_assists: 0, total_deaths: 0,
                     total_coins: 0, total_coin_value: 0,
                     total_building_damage: 0, total_damage: 0, total_healing: 0,
+                    total_damage_taken: 0,
                     avg_coin_ratio: 0, avg_building: 0, avg_damage: 0,
-                    avg_kills: 0, avg_healing: 0, kda: 0,
+                    avg_kills: 0, avg_healing: 0, avg_damage_taken: 0,
+                    avg_assists: 0, avg_deaths: 0, kda: 0,
                 });
             }
             const p = agg.get(s.player_name)!;
@@ -225,11 +287,15 @@ export default function CardGeneratorPage() {
             p.total_building_damage += s.building_damage || 0;
             p.total_damage += s.damage || 0;
             p.total_healing += s.healing || 0;
+            p.total_damage_taken += s.damage_taken || 0;
             p.avg_coin_ratio = p.total_coin_value > 0 ? p.total_coins / p.total_coin_value : 0;
             p.avg_building = p.total_building_damage / p.matches_played;
             p.avg_damage = p.total_damage / p.matches_played;
             p.avg_kills = p.total_kills / p.matches_played;
             p.avg_healing = p.total_healing / p.matches_played;
+            p.avg_damage_taken = p.total_damage_taken / p.matches_played;
+            p.avg_assists = p.total_assists / p.matches_played;
+            p.avg_deaths = p.total_deaths / p.matches_played;
             p.kda = p.total_kills / Math.max(p.total_deaths, 1);
         }
 
@@ -250,8 +316,10 @@ export default function CardGeneratorPage() {
         total_kills: 0, total_assists: 0, total_deaths: 0,
         total_coins: 0, total_coin_value: 0,
         total_building_damage: 0, total_damage: 0, total_healing: 0,
+        total_damage_taken: 0,
         avg_coin_ratio: 0, avg_building: 0, avg_damage: 0,
-        avg_kills: 0, avg_healing: 0, kda: 0,
+        avg_kills: 0, avg_healing: 0, avg_damage_taken: 0,
+        avg_assists: 0, avg_deaths: 0, kda: 0,
     };
 
     // Filter display labels
@@ -290,21 +358,24 @@ export default function CardGeneratorPage() {
     const handleCopy = async () => {
         if (!cardRef.current) return;
         try {
-            const canvas = await html2canvas(cardRef.current, {
-                backgroundColor: null,
-                scale: 3,
-                useCORS: true,
-            });
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
+            const blob = await domtoimage.toBlob(cardRef.current, { scale: 3 });
+            if (navigator.clipboard?.write) {
                 await navigator.clipboard.write([
-                    new ClipboardItem({ "image/png": blob }),
+                    new ClipboardItem({ 'image/png': blob }),
                 ]);
-                setCopySuccess(true);
-                setTimeout(() => setCopySuccess(false), 2000);
-            });
+            } else {
+                // Fallback: download if Clipboard API not available
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${selectedPlayer || 'card'}_战场明信片.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
         } catch (err) {
-            console.error("Copy failed:", err);
+            console.error('Copy failed:', err);
         }
     };
 
@@ -312,17 +383,15 @@ export default function CardGeneratorPage() {
     const handleDownload = async () => {
         if (!cardRef.current) return;
         try {
-            const canvas = await html2canvas(cardRef.current, {
-                backgroundColor: null,
-                scale: 3,
-                useCORS: true,
-            });
-            const link = document.createElement("a");
-            link.download = `${selectedPlayer || "card"}_战场明信片.png`;
-            link.href = canvas.toDataURL("image/png");
-            link.click();
+            const blob = await domtoimage.toBlob(cardRef.current, { scale: 3 });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.download = `${selectedPlayer || 'card'}_战场明信片.png`;
+            a.href = url;
+            a.click();
+            URL.revokeObjectURL(url);
         } catch (err) {
-            console.error("Download failed:", err);
+            console.error('Download failed:', err);
         }
     };
 
@@ -434,13 +503,19 @@ export default function CardGeneratorPage() {
                                     {/* Top bar: baiye name + filter */}
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-1 h-4 bg-yellow-500" />
-                                            <span className="text-[11px] font-bold text-yellow-500/80 tracking-wider uppercase">
+                                            <div className="w-1 h-4" style={{ background: "#facc15" }} />
+                                            <span
+                                                className="font-bold tracking-wider uppercase"
+                                                style={{ fontSize: 11, color: "rgba(250,204,21,0.8)" }}
+                                            >
                                                 {baiye?.name || "百业战"}
                                             </span>
                                         </div>
                                         {filterLabel && (
-                                            <span className="text-[9px] px-2 py-0.5 border border-yellow-500/30 text-yellow-500/70 font-bold tracking-wider">
+                                            <span
+                                                className="font-bold tracking-wider"
+                                                style={{ fontSize: 9, padding: "2px 8px", border: "1px solid rgba(250,204,21,0.3)", color: "rgba(250,204,21,0.7)" }}
+                                            >
                                                 {filterLabel}
                                             </span>
                                         )}
@@ -448,32 +523,66 @@ export default function CardGeneratorPage() {
 
                                     {/* Avatar + Name + Title */}
                                     <div className="flex items-center gap-4 mb-5">
-                                        {/* Avatar placeholder */}
-                                        <div className="w-16 h-16 border-2 border-yellow-500/40 bg-neutral-800/60 flex items-center justify-center shrink-0"
-                                            style={{ boxShadow: "0 0 12px rgba(250,204,21,0.1)" }}
+                                        {/* Avatar */}
+                                        <div
+                                            className="w-16 h-16 shrink-0 overflow-hidden"
+                                            style={{
+                                                border: "2px solid rgba(250,204,21,0.4)",
+                                                boxShadow: "0 0 12px rgba(250,204,21,0.1)",
+                                            }}
                                         >
-                                            <span className="text-2xl">⚔️</span>
+                                            {user?.avatar_url ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    src={user.avatar_url}
+                                                    alt={user.character_name || "avatar"}
+                                                    className="w-full h-full object-cover"
+                                                    crossOrigin="anonymous"
+                                                />
+                                            ) : (
+                                                <div
+                                                    className="w-full h-full flex items-center justify-center"
+                                                    style={{ background: "rgba(30,30,50,0.8)" }}
+                                                >
+                                                    <span
+                                                        className="font-black"
+                                                        style={{ fontSize: 22, color: "rgba(250,204,21,0.8)" }}
+                                                    >
+                                                        {(currentPlayer.player_name || user?.character_name || "?").charAt(0)}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             {/* Title */}
-                                            <div className="text-[10px] text-cyan-400/80 font-bold mb-0.5 tracking-wider">
-                                                — 称号
+                                            <div
+                                                className="font-bold mb-0.5 tracking-wider"
+                                                style={{ fontSize: 10, color: "rgba(34,211,238,0.8)" }}
+                                            >
+                                                {getTitle(currentPlayer)}
                                             </div>
                                             {/* Name */}
-                                            <h2 className="text-xl font-black text-white truncate leading-tight"
-                                                style={{ textShadow: "0 0 10px rgba(255,255,255,0.1)" }}
+                                            <h2
+                                                className="font-black truncate leading-tight"
+                                                style={{ fontSize: 20, color: "#ffffff", textShadow: "0 0 10px rgba(255,255,255,0.1)" }}
                                             >
                                                 {currentPlayer.player_name || "—"}
                                             </h2>
                                             {/* Matches count */}
-                                            <div className="text-[10px] text-neutral-500 mt-0.5">
+                                            <div
+                                                className="mt-0.5"
+                                                style={{ fontSize: 10, color: "#737373" }}
+                                            >
                                                 参与 {currentPlayer.matches_played || 0} 场对战
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* Divider */}
-                                    <div className="h-px bg-gradient-to-r from-transparent via-yellow-500/30 to-transparent mb-4" />
+                                    <div
+                                        className="h-px mb-4"
+                                        style={{ background: "linear-gradient(to right, transparent, rgba(250,204,21,0.3), transparent)" }}
+                                    />
 
                                     {/* Stats Grid */}
                                     {activeModules.length > 0 && (
@@ -485,14 +594,18 @@ export default function CardGeneratorPage() {
                                             {activeModules.map(mod => (
                                                 <div
                                                     key={mod.key}
-                                                    className="flex flex-col items-center py-2.5 px-1 border border-white/5 bg-white/[0.02]"
+                                                    className="flex flex-col items-center py-2.5 px-1"
+                                                    style={{ border: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.02)" }}
                                                 >
-                                                    <span className="text-[10px] text-neutral-500 font-bold mb-1">
+                                                    <span
+                                                        className="font-bold mb-1"
+                                                        style={{ fontSize: 10, color: "#737373" }}
+                                                    >
                                                         {mod.icon} {mod.label}
                                                     </span>
                                                     <span
-                                                        className="text-lg font-black tracking-tight"
-                                                        style={{ color: mod.color, textShadow: `0 0 8px ${mod.color}33` }}
+                                                        className="font-black tracking-tight"
+                                                        style={{ fontSize: 18, color: mod.color, textShadow: `0 0 8px ${mod.color}33` }}
                                                     >
                                                         {currentPlayer ? mod.getValue(currentPlayer) : "—"}
                                                     </span>
@@ -504,12 +617,15 @@ export default function CardGeneratorPage() {
                                     {/* Bottom bar */}
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-1.5">
-                                            <div className="w-1.5 h-1.5 bg-yellow-500 rotate-45" />
-                                            <span className="text-[9px] text-neutral-600 font-bold tracking-widest uppercase">
+                                            <div className="w-1.5 h-1.5 rotate-45" style={{ background: "#facc15" }} />
+                                            <span
+                                                className="font-bold tracking-widest uppercase"
+                                                style={{ fontSize: 9, color: "#525252" }}
+                                            >
                                                 baiyezhan.xyz
                                             </span>
                                         </div>
-                                        <span className="text-[9px] text-neutral-700">
+                                        <span style={{ fontSize: 9, color: "#404040" }}>
                                             {new Date().toLocaleDateString("zh-CN")}
                                         </span>
                                     </div>
