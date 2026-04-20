@@ -212,12 +212,18 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
     return <span className="text-yellow-400 ml-0.5">{dir === 'asc' ? '▲' : '▼'}</span>;
 }
 
-function SortableTeamTable({ teamName, stats, isOurTeam }: {
+function SortableTeamTable({ teamName, stats, isOurTeam, isAdmin, onRenamePlayer }: {
     teamName: string;
     stats: MatchStat[];
     isOurTeam: boolean;
+    isAdmin?: boolean;
+    onRenamePlayer?: (statId: string, oldName: string, newName: string) => Promise<void>;
 }) {
     const [sort, setSort] = useState<SortState>({ key: 'kills', dir: 'desc' });
+    // editingId: the stat.id currently being renamed; null means no edit mode
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState('');
+    const [saving, setSaving] = useState(false);
 
     const sortedStats = useMemo(() => {
         const sorted = [...stats];
@@ -235,6 +241,29 @@ function SortableTeamTable({ teamName, stats, isOurTeam }: {
         return sorted;
     }, [stats, sort]);
 
+    const startEdit = (s: MatchStat) => {
+        setEditingId(s.id);
+        setEditValue(s.player_name);
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        setEditValue('');
+    };
+
+    const confirmEdit = async (s: MatchStat) => {
+        const trimmed = editValue.trim();
+        if (!trimmed || trimmed === s.player_name) { cancelEdit(); return; }
+        if (!onRenamePlayer) return;
+        setSaving(true);
+        try {
+            await onRenamePlayer(s.id, s.player_name, trimmed);
+            cancelEdit();
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (stats.length === 0) {
         return (
             <div className="text-center text-sm text-neutral-500 py-4 border border-dashed border-neutral-700">
@@ -251,6 +280,9 @@ function SortableTeamTable({ teamName, stats, isOurTeam }: {
                 {isOurTeam ? "⭐" : "⚔️"} {teamName}
                 <span className="text-xs text-neutral-500 font-normal">({stats.length}人)</span>
             </h4>
+            {isAdmin && (
+                <p className="text-[10px] text-neutral-600">✏️ 管理员：点击玩家名旁的按钮可修正代打身份</p>
+            )}
             <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse min-w-[800px]">
                     <thead>
@@ -277,7 +309,55 @@ function SortableTeamTable({ teamName, stats, isOurTeam }: {
                     <tbody>
                         {sortedStats.map((s) => (
                             <tr key={s.id} className="border-b border-neutral-800 hover:bg-neutral-800/50">
-                                <td className="py-1.5 px-2 font-bold text-white">{s.player_name}</td>
+                                <td className="py-1.5 px-2 font-bold text-white">
+                                    {editingId === s.id ? (
+                                        /* ── 行内编辑模式 ── */
+                                        <div className="flex items-center gap-1.5">
+                                            <input
+                                                autoFocus
+                                                value={editValue}
+                                                onChange={e => setEditValue(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') confirmEdit(s);
+                                                    if (e.key === 'Escape') cancelEdit();
+                                                }}
+                                                disabled={saving}
+                                                className="bg-neutral-700 border border-yellow-500/60 text-white text-xs px-2 py-1 outline-none focus:border-yellow-400 w-36"
+                                                placeholder="输入真实玩家ID"
+                                            />
+                                            <button
+                                                onClick={() => confirmEdit(s)}
+                                                disabled={saving}
+                                                className="text-[10px] px-1.5 py-1 bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                                                title="确认"
+                                            >
+                                                {saving ? '...' : '✓'}
+                                            </button>
+                                            <button
+                                                onClick={cancelEdit}
+                                                disabled={saving}
+                                                className="text-[10px] px-1.5 py-1 bg-neutral-700 border border-neutral-600 text-neutral-400 hover:text-white transition-colors"
+                                                title="取消"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        /* ── 正常显示模式 ── */
+                                        <div className="flex items-center gap-1 group">
+                                            <span>{s.player_name}</span>
+                                            {isAdmin && (
+                                                <button
+                                                    onClick={() => startEdit(s)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-neutral-500 hover:text-yellow-400 px-1 py-0.5 hover:bg-yellow-500/10 border border-transparent hover:border-yellow-500/30"
+                                                    title="修正代打玩家ID"
+                                                >
+                                                    ✏️
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </td>
                                 {STAT_COLS.map((col) => (
                                     <td key={col.key} className="py-1.5 px-1 text-center text-neutral-300">
                                         {Number(s[col.key]).toLocaleString()}
@@ -395,6 +475,45 @@ export default function MatchHistoryPage() {
         } finally {
             setDeletingId(null);
         }
+    };
+
+    // === 代打身份修正：修改单条 match_stat 的 player_name ===
+    const handleRenamePlayer = async (statId: string, oldName: string, newName: string) => {
+        if (!confirm(`确认将「${oldName}」更正为「${newName}」？\n\n此为本场对局的代打修正，仅影响该条记录。`)) {
+            throw new Error('cancelled');
+        }
+
+        const { data: { session } } = await SupabaseService.getSession();
+        const token = session?.access_token;
+
+        const res = await fetch(`/api/matches/stats/${statId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ newPlayerName: newName }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+
+        // Update local detail state so UI reflects the change immediately
+        setDetail(prev => {
+            if (!prev) return prev;
+            const patch = (arr: MatchStat[]) =>
+                arr.map(s => s.id === statId ? { ...s, player_name: newName } : s);
+            return {
+                ...prev,
+                stats: patch(prev.stats),
+                team_a_stats: patch(prev.team_a_stats),
+                team_b_stats: patch(prev.team_b_stats),
+            };
+        });
+
+        alert(`✅ 已将「${oldName}」的代打记录更正为「${newName}」`);
     };
 
     const formatTime = (t?: string) => {
@@ -645,12 +764,16 @@ export default function MatchHistoryPage() {
                                                 teamName={detail.match.team_a}
                                                 stats={detail.team_a_stats}
                                                 isOurTeam={detail.match.team_a === baiye?.name}
+                                                isAdmin={isAdmin}
+                                                onRenamePlayer={handleRenamePlayer}
                                             />
                                             <div className="border-t border-neutral-700" />
                                             <SortableTeamTable
                                                 teamName={detail.match.team_b}
                                                 stats={detail.team_b_stats}
                                                 isOurTeam={detail.match.team_b === baiye?.name}
+                                                isAdmin={isAdmin}
+                                                onRenamePlayer={handleRenamePlayer}
                                             />
                                         </>
                                     ) : (

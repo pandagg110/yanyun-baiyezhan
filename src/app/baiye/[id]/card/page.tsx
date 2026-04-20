@@ -201,7 +201,7 @@ export default function CardGeneratorPage() {
         for (const s of ourStats) {
             const m = matchMap.get(s.match_id);
             if (!m) continue;
-            const coinVal = m.coin_value || 660;
+            const coinVal = m.coin_value || 720;
             const ratio = coinVal > 0 ? (s.coins || 0) / coinVal : 0;
 
             if (!agg.has(s.player_name)) {
@@ -361,11 +361,10 @@ export default function CardGeneratorPage() {
                                     <button
                                         key={t}
                                         onClick={() => { setMatchType(t); setGenerated(false); }}
-                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${
-                                            matchType === t
+                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${matchType === t
                                                 ? "bg-yellow-500 border-yellow-600 text-black"
                                                 : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {t}
                                     </button>
@@ -379,11 +378,10 @@ export default function CardGeneratorPage() {
                                     <button
                                         key={p.value}
                                         onClick={() => { setPeriod(p.value); setGenerated(false); }}
-                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${
-                                            period === p.value
+                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${period === p.value
                                                 ? "bg-yellow-500 border-yellow-600 text-black"
                                                 : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {p.label}
                                     </button>
@@ -408,9 +406,8 @@ export default function CardGeneratorPage() {
                         {/* Card */}
                         <div
                             ref={cardRef}
-                            className={`w-[380px] transition-all duration-500 ${
-                                generated ? 'opacity-100 scale-100' : 'opacity-60 scale-95'
-                            }`}
+                            className={`w-[380px] transition-all duration-500 ${generated ? 'opacity-100 scale-100' : 'opacity-60 scale-95'
+                                }`}
                             style={{ fontFamily: "'Noto Sans SC', sans-serif" }}
                         >
                             {/* Card Background */}
@@ -480,12 +477,11 @@ export default function CardGeneratorPage() {
 
                                     {/* Stats Grid */}
                                     {activeModules.length > 0 && (
-                                        <div className={`grid gap-2 mb-4 ${
-                                            activeModules.length <= 2 ? 'grid-cols-2' :
-                                            activeModules.length === 3 ? 'grid-cols-3' :
-                                            activeModules.length === 4 ? 'grid-cols-2' :
-                                            'grid-cols-3'
-                                        }`}>
+                                        <div className={`grid gap-2 mb-4 ${activeModules.length <= 2 ? 'grid-cols-2' :
+                                                activeModules.length === 3 ? 'grid-cols-3' :
+                                                    activeModules.length === 4 ? 'grid-cols-2' :
+                                                        'grid-cols-3'
+                                            }`}>
                                             {activeModules.map(mod => (
                                                 <div
                                                     key={mod.key}
@@ -526,11 +522,10 @@ export default function CardGeneratorPage() {
                             <div className="flex gap-3 mt-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <button
                                     onClick={handleCopy}
-                                    className={`px-5 py-2.5 text-xs font-bold border-2 transition-all ${
-                                        copySuccess
+                                    className={`px-5 py-2.5 text-xs font-bold border-2 transition-all ${copySuccess
                                             ? "bg-green-500 border-green-600 text-black"
                                             : "bg-neutral-800 border-neutral-600 text-white hover:border-yellow-500 hover:text-yellow-500"
-                                    }`}
+                                        }`}
                                 >
                                     {copySuccess ? "✅ 已复制" : "📋 复制图片"}
                                 </button>
@@ -562,11 +557,10 @@ export default function CardGeneratorPage() {
                                         <button
                                             key={mod.key}
                                             onClick={() => toggleStat(mod.key)}
-                                            className={`w-full flex items-center gap-3 px-3 py-2 border-2 text-left transition-all ${
-                                                isOn
+                                            className={`w-full flex items-center gap-3 px-3 py-2 border-2 text-left transition-all ${isOn
                                                     ? "border-current bg-current/5"
                                                     : "border-neutral-700 bg-neutral-800 hover:border-neutral-600"
-                                            }`}
+                                                }`}
                                             style={isOn ? { borderColor: mod.color + "60", color: mod.color } : {}}
                                         >
                                             <span className="text-sm">{mod.icon}</span>
@@ -578,11 +572,10 @@ export default function CardGeneratorPage() {
                                                     {mod.getValue(currentPlayer)}
                                                 </span>
                                             )}
-                                            <span className={`w-5 h-5 border-2 flex items-center justify-center text-[10px] font-bold ${
-                                                isOn
+                                            <span className={`w-5 h-5 border-2 flex items-center justify-center text-[10px] font-bold ${isOn
                                                     ? "border-current bg-current text-black"
                                                     : "border-neutral-600"
-                                            }`}
+                                                }`}
                                                 style={isOn ? { backgroundColor: mod.color, borderColor: mod.color } : {}}
                                             >
                                                 {isOn ? "✓" : ""}
@@ -597,11 +590,10 @@ export default function CardGeneratorPage() {
                         <button
                             onClick={handleGenerate}
                             disabled={generating}
-                            className={`w-full py-3.5 text-sm font-black uppercase tracking-wider border-3 transition-all ${
-                                generating
+                            className={`w-full py-3.5 text-sm font-black uppercase tracking-wider border-3 transition-all ${generating
                                     ? "bg-neutral-700 border-neutral-600 text-neutral-500 cursor-not-allowed"
                                     : "bg-gradient-to-r from-yellow-500 to-amber-500 border-yellow-600 text-black hover:from-yellow-400 hover:to-amber-400 hover:shadow-[0_0_20px_rgba(250,204,21,0.3)]"
-                            }`}
+                                }`}
                             style={{ borderWidth: "3px" }}
                         >
                             {generating ? (

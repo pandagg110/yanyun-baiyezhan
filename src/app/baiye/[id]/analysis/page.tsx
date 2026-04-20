@@ -206,9 +206,8 @@ function AnalysisTimeline({ matches, baiyeName, onSelect, activeId }: {
                                         ${activeId === m.id ? 'ring-1 ring-yellow-500/60 scale-105 z-10' : ''}
                                     `}
                                 >
-                                    <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full text-[7px] font-black flex items-center justify-center ${
-                                        won ? 'bg-green-500 text-black' : lost ? 'bg-red-500 text-white' : 'bg-neutral-600 text-neutral-400'
-                                    }`}>
+                                    <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full text-[7px] font-black flex items-center justify-center ${won ? 'bg-green-500 text-black' : lost ? 'bg-red-500 text-white' : 'bg-neutral-600 text-neutral-400'
+                                        }`}>
                                         {won ? 'W' : lost ? 'L' : '?'}
                                     </div>
                                     <span className={`text-[9px] font-bold px-1 py-px mb-0.5 ${getBadge(m.match_type)}`}>
@@ -254,7 +253,7 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
             else if (key === 'kda') { va = a.kda; vb = b.kda; }
             else {
                 const getVal = (x: MatchStat) => {
-                    switch(key) {
+                    switch (key) {
                         case 'building_damage': return x.building_damage || 0;
                         case 'kills': return x.kills || 0;
                         case 'assists': return x.assists || 0;
@@ -519,7 +518,7 @@ export default function AnalysisPage() {
             if (!m) continue;
             // Only count our baiye's players, skip enemy team
             if (s.team_name !== baiye?.name) continue;
-            const coinValue = m.coin_value || 660;
+            const coinValue = m.coin_value || 720;
 
             if (!playerMap.has(s.player_name)) {
                 playerMap.set(s.player_name, {
@@ -583,7 +582,7 @@ export default function AnalysisPage() {
             .map(s => {
                 const m = matchMap.get(s.match_id);
                 if (!m) return null;
-                const cv = m.coin_value || 660;
+                const cv = m.coin_value || 720;
                 return {
                     match: m,
                     stat: s,
@@ -639,7 +638,7 @@ export default function AnalysisPage() {
             const totalDeaths = ourStats.reduce((a, s) => a + (s.deaths || 0), 0);
             const totalCoins = ourStats.reduce((a, s) => a + (s.coins || 0), 0);
             const totalBuilding = ourStats.reduce((a, s) => a + (s.building_damage || 0), 0);
-            const cv = m.coin_value || 660;
+            const cv = m.coin_value || 720;
 
             return {
                 match: m,
@@ -852,11 +851,10 @@ export default function AnalysisPage() {
                                     <button
                                         key={t}
                                         onClick={() => setMatchType(t)}
-                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${
-                                            matchType === t
+                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${matchType === t
                                                 ? "bg-yellow-500 border-yellow-600 text-black"
                                                 : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {t}
                                     </button>
@@ -874,11 +872,10 @@ export default function AnalysisPage() {
                                     <button
                                         key={p.value}
                                         onClick={() => setPeriod(p.value)}
-                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${
-                                            period === p.value
+                                        className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${period === p.value
                                                 ? "bg-yellow-500 border-yellow-600 text-black"
                                                 : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {p.label}
                                     </button>
@@ -938,11 +935,10 @@ export default function AnalysisPage() {
                             <button
                                 key={tab.key}
                                 onClick={() => setViewTab(tab.key)}
-                                className={`flex-1 py-2.5 text-xs font-bold transition-all ${
-                                    viewTab === tab.key
+                                className={`flex-1 py-2.5 text-xs font-bold transition-all ${viewTab === tab.key
                                         ? 'bg-yellow-500 text-black'
                                         : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
-                                }`}
+                                    }`}
                             >
                                 {tab.label} ({tab.count})
                             </button>
@@ -996,11 +992,10 @@ export default function AnalysisPage() {
                                             <tr
                                                 key={p.player_name}
                                                 onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
-                                                className={`border-b border-neutral-800 cursor-pointer transition-colors ${
-                                                    isSelected
+                                                className={`border-b border-neutral-800 cursor-pointer transition-colors ${isSelected
                                                         ? "bg-yellow-500/10 border-yellow-500/30"
                                                         : "hover:bg-neutral-750 hover:bg-white/5"
-                                                }`}
+                                                    }`}
                                             >
                                                 <td className="py-2.5 px-2 text-neutral-600 text-xs">
                                                     {i + 1}
@@ -1067,11 +1062,10 @@ export default function AnalysisPage() {
                                                     {p.matches_played}
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
-                                                    <span className={`text-xs font-bold ${
-                                                        p.avg_coin_ratio >= 1.5 ? "text-yellow-400" :
-                                                        p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
-                                                        "text-neutral-400"
-                                                    }`}>
+                                                    <span className={`text-xs font-bold ${p.avg_coin_ratio >= 1.5 ? "text-yellow-400" :
+                                                            p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
+                                                                "text-neutral-400"
+                                                        }`}>
                                                         {p.avg_coin_ratio.toFixed(2)}
                                                     </span>
                                                 </td>
@@ -1086,12 +1080,11 @@ export default function AnalysisPage() {
                                                     </span>
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 ${
-                                                        p.kda >= 10 ? "text-cyan-300 bg-cyan-500/10" :
-                                                        p.kda >= 5 ? "text-cyan-400" :
-                                                        p.kda >= 3 ? "text-green-400" :
-                                                        "text-neutral-400"
-                                                    }`}>
+                                                    <span className={`text-xs font-bold px-2 py-0.5 ${p.kda >= 10 ? "text-cyan-300 bg-cyan-500/10" :
+                                                            p.kda >= 5 ? "text-cyan-400" :
+                                                                p.kda >= 3 ? "text-green-400" :
+                                                                    "text-neutral-400"
+                                                        }`}>
                                                         {p.kda.toFixed(2)}
                                                     </span>
                                                 </td>
@@ -1142,11 +1135,10 @@ export default function AnalysisPage() {
                                         return (
                                             <div
                                                 key={log.id}
-                                                className={`flex items-center gap-3 px-3 py-2 text-xs border transition-all ${
-                                                    log.is_undone
+                                                className={`flex items-center gap-3 px-3 py-2 text-xs border transition-all ${log.is_undone
                                                         ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
                                                         : 'border-neutral-700 bg-neutral-800/50'
-                                                }`}
+                                                    }`}
                                             >
                                                 <span className="text-neutral-600 w-5 shrink-0">{idx + 1}</span>
                                                 <span className="text-neutral-400 w-28 shrink-0">{time}</span>
@@ -1221,11 +1213,10 @@ export default function AnalysisPage() {
                                         <button
                                             key={m.key}
                                             onClick={() => setChartMetric(m.key)}
-                                            className={`px-4 py-2 text-xs font-bold border-2 transition-all ${
-                                                chartMetric === m.key
+                                            className={`px-4 py-2 text-xs font-bold border-2 transition-all ${chartMetric === m.key
                                                     ? "border-current text-black"
                                                     : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
-                                            }`}
+                                                }`}
                                             style={chartMetric === m.key ? { backgroundColor: m.color, borderColor: m.color } : {}}
                                         >
                                             {m.label}
@@ -1260,11 +1251,10 @@ export default function AnalysisPage() {
                                         <div className="relative">
                                             <button
                                                 onClick={() => setCompareDropdownOpen(v => !v)}
-                                                className={`px-3 py-1.5 text-xs font-bold border-2 border-dashed transition-all ${
-                                                    compareDropdownOpen
+                                                className={`px-3 py-1.5 text-xs font-bold border-2 border-dashed transition-all ${compareDropdownOpen
                                                         ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
                                                         : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
-                                                }`}
+                                                    }`}
                                             >
                                                 + 添加对比玩家
                                             </button>
@@ -1392,7 +1382,7 @@ export default function AnalysisPage() {
                                 const isExpanded = expandedMatchId === match.id;
                                 const typeBadge = match.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
                                     match.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
-                                    "text-green-400 border-green-500/30 bg-green-500/10";
+                                        "text-green-400 border-green-500/30 bg-green-500/10";
 
                                 return (
                                     <div key={match.id} className="border border-neutral-700 overflow-hidden">
@@ -1443,7 +1433,7 @@ export default function AnalysisPage() {
                                                             key={name}
                                                             teamName={name}
                                                             stats={tStats}
-                                                            coinValue={match.coin_value || 660}
+                                                            coinValue={match.coin_value || 720}
                                                             sort={detailSort}
                                                             onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
                                                             formatNum={formatNum}

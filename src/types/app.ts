@@ -87,7 +87,7 @@ export interface Match {
     match_start_time?: string;  // 对战开始时间
     match_date?: string;        // auto-synced from match_start_time
     match_type?: string;        // 约战 | 正赛 | 排位 (default)
-    coin_value?: number;         // 逗币基数，默认660
+    coin_value?: number;         // 逗币基数，默认720
     notes?: string;
     screenshot_urls?: string[];
     created_by?: string;

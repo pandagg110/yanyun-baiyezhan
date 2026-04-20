@@ -54,7 +54,7 @@ export default function StatsUploadPage() {
     );
     const [winner, setWinner] = useState<string | null>(null);
     const [matchType, setMatchType] = useState("排位");
-    const [coinValue, setCoinValue] = useState(660);
+    const [coinValue, setCoinValue] = useState(720);
     const [notes, setNotes] = useState("");
 
     const [isChecking, setIsChecking] = useState(false);
@@ -399,12 +399,12 @@ export default function StatsUploadPage() {
                                 <input
                                     type="number"
                                     value={coinValue}
-                                    onChange={(e) => setCoinValue(Number(e.target.value) || 660)}
+                                    onChange={(e) => setCoinValue(Number(e.target.value) || 720)}
                                     min={0}
                                     step={10}
                                     className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
                                 />
-                                <p className="text-[10px] text-neutral-600">默认660，后续可能调整</p>
+                                <p className="text-[10px] text-neutral-600">默认720，后续可能调整</p>
                             </div>
 
                             <div className="space-y-2">
