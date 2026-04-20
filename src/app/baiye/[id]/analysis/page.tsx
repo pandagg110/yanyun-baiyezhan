@@ -992,6 +992,38 @@ export default function AnalysisPage() {
 
                         {/* ── Mobile: Player Cards ── */}
                         <div className="md:hidden space-y-2">
+                            {/* Sort bar */}
+                            <div className="flex flex-wrap gap-1.5 pb-2 border-b border-neutral-700/60">
+                                <span className="text-[10px] text-neutral-600 self-center pr-0.5 shrink-0">排序:</span>
+                                {([
+                                    { key: 'kda' as const, label: 'KD', color: 'text-cyan-400' },
+                                    { key: 'avg_coin_ratio' as const, label: '拿野', color: 'text-yellow-500' },
+                                    { key: 'avg_building' as const, label: '塔伤', color: 'text-orange-400' },
+                                    { key: 'avg_healing' as const, label: '治疗', color: 'text-emerald-400' },
+                                    { key: 'matches_played' as const, label: '场数', color: 'text-neutral-400' },
+                                    { key: 'player_name' as const, label: '名字', color: 'text-neutral-400' },
+                                ]).map(opt => {
+                                    const isActive = playerSort.key === opt.key;
+                                    return (
+                                        <button
+                                            key={opt.key}
+                                            onClick={() => setPlayerSort(toggleSort(playerSort, opt.key))}
+                                            className={`flex items-center gap-0.5 px-2.5 py-1 text-[11px] font-bold border transition-all ${
+                                                isActive
+                                                    ? 'bg-yellow-500/15 border-yellow-500/50 text-yellow-400'
+                                                    : 'bg-neutral-800 border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300'
+                                            }`}
+                                        >
+                                            <span className={isActive ? 'text-yellow-400' : opt.color}>{opt.label}</span>
+                                            {isActive && (
+                                                <span className="text-[9px] text-yellow-500 ml-0.5">
+                                                    {playerSort.dir === 'desc' ? '↓' : '↑'}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             {sortedPlayerAggs.map((p, i) => {
                                 const isSelected = selectedPlayer === p.player_name;
                                 const kdaColor = p.kda >= 10 ? 'text-cyan-300' : p.kda >= 5 ? 'text-cyan-400' : p.kda >= 3 ? 'text-green-400' : 'text-neutral-400';
