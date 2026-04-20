@@ -237,7 +237,6 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
     onSort: (key: DetailSortKey) => void;
     formatNum: (n: number) => string;
 }) {
-    // Compute derived values & sort
     const rows = useMemo(() => {
         const enriched = stats.map(s => {
             const cr = (s.coins || 0) / coinValue;
@@ -278,7 +277,44 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
             <h5 className="text-xs font-bold text-neutral-400 mb-2 uppercase">
                 {teamName} ({stats.length}人)
             </h5>
-            <div className="overflow-x-auto">
+
+            {/* ── Mobile: Card List ── */}
+            <div className="md:hidden space-y-2">
+                {rows.map(({ s, coin_ratio, kda }) => (
+                    <div key={s.id} className="bg-neutral-900/60 border border-neutral-700 px-3 py-2.5 space-y-2">
+                        {/* Player name + core metrics */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-white">{s.player_name}</span>
+                            <div className="flex gap-2 text-xs">
+                                <span className="text-cyan-400 font-bold">KD {kda.toFixed(2)}</span>
+                                <span className="text-yellow-500 font-bold">🐉{coin_ratio.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        {/* Stats grid */}
+                        <div className="grid grid-cols-4 gap-1 text-[11px]">
+                            <div className="text-center">
+                                <div className="text-neutral-500 mb-0.5">击/助/伤</div>
+                                <div className="text-neutral-300 font-bold">{s.kills}/{s.assists}/{s.deaths}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-neutral-500 mb-0.5">塔伤</div>
+                                <div className="text-orange-400 font-bold">{formatNum(s.building_damage || 0)}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-neutral-500 mb-0.5">治疗</div>
+                                <div className="text-emerald-400 font-bold">{formatNum(s.healing || 0)}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-neutral-500 mb-0.5">输出</div>
+                                <div className="text-neutral-300 font-bold">{formatNum(s.damage || 0)}</div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* ── Desktop: Sortable Table ── */}
+            <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-xs border-collapse min-w-[600px]">
                     <thead>
                         <tr className="border-b border-neutral-700">
@@ -316,6 +352,7 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
         </div>
     );
 }
+
 
 export default function AnalysisPage() {
     const params = useParams();
@@ -952,7 +989,101 @@ export default function AnalysisPage() {
                         <h3 className="text-sm font-bold text-yellow-500 uppercase border-b-2 border-yellow-500/20 pb-2">
                             🏆 玩家综合数据
                         </h3>
-                        <div className="overflow-x-auto -mx-4 px-4">
+
+                        {/* ── Mobile: Player Cards ── */}
+                        <div className="md:hidden space-y-2">
+                            {sortedPlayerAggs.map((p, i) => {
+                                const isSelected = selectedPlayer === p.player_name;
+                                const kdaColor = p.kda >= 10 ? 'text-cyan-300' : p.kda >= 5 ? 'text-cyan-400' : p.kda >= 3 ? 'text-green-400' : 'text-neutral-400';
+                                const coinColor = p.avg_coin_ratio >= 1.5 ? 'text-yellow-400' : p.avg_coin_ratio >= 1.0 ? 'text-yellow-500/80' : 'text-neutral-400';
+                                return (
+                                    <div
+                                        key={p.player_name}
+                                        onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
+                                        className={`border-2 px-3 py-3 cursor-pointer transition-colors ${
+                                            isSelected
+                                                ? 'border-yellow-500/60 bg-yellow-500/8'
+                                                : 'border-neutral-700 bg-neutral-900/40 hover:border-neutral-600'
+                                        }`}
+                                    >
+                                        {/* Row 1: rank + name + rank indicator */}
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-neutral-600 text-xs w-5 shrink-0">#{i + 1}</span>
+                                            <span className="font-bold text-white text-sm flex-1 min-w-0 truncate">
+                                                {renamingPlayer === p.player_name ? (
+                                                    <form
+                                                        className="flex items-center gap-1"
+                                                        onSubmit={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            handleRename(p.player_name, renameValue);
+                                                        }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <input
+                                                            autoFocus
+                                                            className="bg-neutral-700 border border-yellow-500/50 text-white text-xs px-1.5 py-0.5 w-28 outline-none focus:border-yellow-500"
+                                                            value={renameValue}
+                                                            onChange={(e) => setRenameValue(e.target.value)}
+                                                            disabled={renameLoading}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Escape') { e.stopPropagation(); setRenamingPlayer(null); }
+                                                            }}
+                                                        />
+                                                        <button type="submit" disabled={renameLoading} className="text-green-400 text-xs px-1 disabled:opacity-50">
+                                                            {renameLoading ? '...' : '✓'}
+                                                        </button>
+                                                        <button type="button" onClick={(e) => { e.stopPropagation(); setRenamingPlayer(null); }} className="text-red-400 text-xs px-1">
+                                                            ✕
+                                                        </button>
+                                                    </form>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        {p.player_name}
+                                                        {isAdmin && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); setRenamingPlayer(p.player_name); setRenameValue(p.player_name); }}
+                                                                className="text-neutral-600 hover:text-yellow-500 transition-colors text-[10px]" title="修改玩家名"
+                                                            >✏️</button>
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <span className="text-[10px] text-neutral-500">{p.matches_played}场</span>
+                                                <span className={`text-xs ${isSelected ? 'text-yellow-500' : 'text-neutral-600'}`}>{isSelected ? '▼' : '▶'}</span>
+                                            </div>
+                                        </div>
+                                        {/* Row 2: core 4 metrics */}
+                                        <div className="grid grid-cols-4 gap-1 text-center">
+                                            <div>
+                                                <div className="text-[10px] text-cyan-500/70 mb-0.5">KD</div>
+                                                <div className={`text-sm font-black ${kdaColor}`}>{p.kda.toFixed(2)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-yellow-500/70 mb-0.5">拿野</div>
+                                                <div className={`text-sm font-black ${coinColor}`}>{p.avg_coin_ratio.toFixed(2)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-orange-400/70 mb-0.5">塔伤</div>
+                                                <div className="text-sm font-black text-orange-400">{formatNum(p.avg_building)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-emerald-400/70 mb-0.5">治疗</div>
+                                                <div className="text-sm font-black text-emerald-400">{formatNum(p.avg_healing)}</div>
+                                            </div>
+                                        </div>
+                                        {/* Row 3: K/A/D */}
+                                        <div className="mt-1.5 text-[11px] text-neutral-500 text-center">
+                                            K/A/D: <span className="text-neutral-400">{p.total_kills}/{p.total_assists}/{p.total_deaths}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* ── Desktop: Sortable Table ── */}
+                        <div className="hidden md:block overflow-x-auto -mx-4 px-4">
                             <table className="w-full text-sm border-collapse min-w-[700px]">
                                 <thead>
                                     <tr className="border-b-2 border-neutral-700">
@@ -1389,36 +1520,60 @@ export default function AnalysisPage() {
                                         {/* Match row header */}
                                         <button
                                             onClick={() => setExpandedMatchId(isExpanded ? null : match.id)}
-                                            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/5 transition-colors"
+                                            className="w-full flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 text-left hover:bg-white/5 transition-colors"
                                         >
-                                            <span className="text-neutral-600 text-xs">{isExpanded ? "▼" : "▶"}</span>
-                                            <span className="text-xs text-neutral-400 w-24 shrink-0">
-                                                {formatTime(match.match_start_time)}
-                                            </span>
-                                            <span className={`px-1.5 py-0.5 text-[10px] font-bold border ${typeBadge}`}>
-                                                {match.match_type || "排位"}
-                                            </span>
-                                            <span className="text-white text-xs font-bold flex-1 min-w-0 truncate">
-                                                {match.team_a} <span className="text-neutral-600">vs</span> {match.team_b}
-                                            </span>
+                                            <span className="text-neutral-600 text-xs shrink-0">{isExpanded ? '▼' : '▶'}</span>
 
-                                            {/* Winner */}
-                                            {match.winner && match.winner !== "draw" && (
-                                                <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
+                                            {/* Mobile layout: stacked */}
+                                            <div className="flex-1 min-w-0 md:contents">
+                                                {/* Time + type badge — stacked on mobile, inline on desktop */}
+                                                <div className="flex items-center gap-2 mb-1 md:mb-0 md:contents">
+                                                    <span className="text-[11px] text-neutral-400 shrink-0 md:w-24">
+                                                        {formatTime(match.match_start_time)}
+                                                    </span>
+                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold border shrink-0 ${typeBadge}`}>
+                                                        {match.match_type || '排位'}
+                                                    </span>
+                                                </div>
+                                                {/* Teams */}
+                                                <div className="flex items-center gap-2 justify-between md:contents">
+                                                    <span className="text-white text-xs font-bold min-w-0 truncate md:flex-1">
+                                                        {match.team_a} <span className="text-neutral-600">vs</span> {match.team_b}
+                                                    </span>
+                                                    {/* Mobile: winner + stats combined */}
+                                                    <div className="flex items-center gap-2 shrink-0 md:hidden">
+                                                        {match.winner && match.winner !== 'draw' && (
+                                                            <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5">
+                                                                🏆 {match.winner.length > 4 ? match.winner.slice(0, 4) + '..' : match.winner}
+                                                            </span>
+                                                        )}
+                                                        <span className="text-neutral-500 text-[11px]">{player_count}人</span>
+                                                    </div>
+                                                </div>
+                                                {/* Mobile: agg stats row */}
+                                                <div className="flex gap-3 mt-1 text-[11px] md:hidden">
+                                                    <span className="text-yellow-500">🐉{avg_coin_ratio.toFixed(2)}</span>
+                                                    <span className="text-orange-400">🏛{formatNum(avg_building)}</span>
+                                                    <span className="text-cyan-400">⚔{kda.toFixed(2)}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Desktop-only: winner, agg stats, player count */}
+                                            {match.winner && match.winner !== 'draw' && (
+                                                <span className="hidden md:inline text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
                                                     🏆 {match.winner}
                                                 </span>
                                             )}
-
-                                            {/* Agg stats */}
-                                            <div className="flex gap-3 shrink-0 text-xs">
+                                            <div className="hidden md:flex gap-3 shrink-0 text-xs">
                                                 <span className="text-yellow-500">🐉 {avg_coin_ratio.toFixed(2)}</span>
                                                 <span className="text-orange-400">🏛 {formatNum(avg_building)}</span>
                                                 <span className="text-cyan-400">⚔ {kda.toFixed(2)}</span>
                                             </div>
-                                            <span className="text-neutral-600 text-xs w-10 text-right shrink-0">
+                                            <span className="hidden md:inline text-neutral-600 text-xs w-10 text-right shrink-0">
                                                 {player_count}人
                                             </span>
                                         </button>
+
 
                                         {/* Expanded detail */}
                                         {isExpanded && (
