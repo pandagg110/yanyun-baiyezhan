@@ -287,7 +287,7 @@ function DetailTable({ teamName, stats, coinValue, sort, onSort, formatNum }: {
                             <span className="text-sm font-bold text-white">{s.player_name}</span>
                             <div className="flex gap-2 text-xs">
                                 <span className="text-cyan-400 font-bold">KD {kda.toFixed(2)}</span>
-                                <span className="text-yellow-500 font-bold">🐉{coin_ratio.toFixed(2)}</span>
+                                <span className="text-yellow-500 font-bold">🪙{coin_ratio.toFixed(2)}</span>
                             </div>
                         </div>
                         {/* Stats grid */}
@@ -1493,7 +1493,7 @@ export default function AnalysisPage() {
                                                         {d.match.team_a} <span className="text-neutral-600">vs</span> {d.match.team_b}
                                                     </span>
                                                     <div className="flex gap-4 shrink-0">
-                                                        <span className="text-yellow-500" title="拿野">🐉 {d.coin_ratio.toFixed(2)}</span>
+                                                        <span className="text-yellow-500" title="拿野">🪙 {d.coin_ratio.toFixed(2)}</span>
                                                         <span className="text-orange-400" title="塔伤">🏛 {formatNum(d.stat.building_damage || 0)}</span>
                                                         <span className="text-emerald-400" title="治疗">💊 {formatNum(d.stat.healing || 0)}</span>
                                                         <span className="text-cyan-400" title="KD">⚔ {d.kda.toFixed(2)}</span>
@@ -1514,7 +1514,7 @@ export default function AnalysisPage() {
                                                         </span>
                                                         <span className="flex-1" />
                                                         <div className="flex gap-4 shrink-0">
-                                                            <span style={{ color: cp.color + 'cc' }} title="拿野">🐉 {cp.data.coin_ratio.toFixed(2)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="拿野">🪙 {cp.data.coin_ratio.toFixed(2)}</span>
                                                             <span style={{ color: cp.color + 'cc' }} title="塔伤">🏛 {formatNum(cp.data.stat.building_damage || 0)}</span>
                                                             <span style={{ color: cp.color + 'cc' }} title="治疗">💊 {formatNum(cp.data.stat.healing || 0)}</span>
                                                             <span style={{ color: cp.color + 'cc' }} title="KD">⚔ {cp.data.kda.toFixed(2)}</span>
@@ -1584,7 +1584,7 @@ export default function AnalysisPage() {
                                                 </div>
                                                 {/* Mobile: agg stats row */}
                                                 <div className="flex gap-3 mt-1 text-[11px] md:hidden">
-                                                    <span className="text-yellow-500">🐉{avg_coin_ratio.toFixed(2)}</span>
+                                                    <span className="text-yellow-500">🪙{avg_coin_ratio.toFixed(2)}</span>
                                                     <span className="text-orange-400">🏛{formatNum(avg_building)}</span>
                                                     <span className="text-cyan-400">⚔{kda.toFixed(2)}</span>
                                                 </div>
@@ -1597,7 +1597,7 @@ export default function AnalysisPage() {
                                                 </span>
                                             )}
                                             <div className="hidden md:flex gap-3 shrink-0 text-xs">
-                                                <span className="text-yellow-500">🐉 {avg_coin_ratio.toFixed(2)}</span>
+                                                <span className="text-yellow-500">🪙 {avg_coin_ratio.toFixed(2)}</span>
                                                 <span className="text-orange-400">🏛 {formatNum(avg_building)}</span>
                                                 <span className="text-cyan-400">⚔ {kda.toFixed(2)}</span>
                                             </div>

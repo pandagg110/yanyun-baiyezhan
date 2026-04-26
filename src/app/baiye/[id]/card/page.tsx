@@ -58,7 +58,7 @@ const STAT_MODULES: StatModule[] = [
     { key: "avg_damage", label: "场均输出", icon: "🔥", getValue: p => formatNum(p.avg_damage), color: "#f59e0b" },
     { key: "avg_kills", label: "场均击杀", icon: "🗡", getValue: p => p.avg_kills.toFixed(1), color: "#a855f7" },
     { key: "avg_healing", label: "场均治疗", icon: "💊", getValue: p => formatNum(p.avg_healing), color: "#34d399" },
-    { key: "coin_ratio", label: "场均拿野", icon: "🐉", getValue: p => p.avg_coin_ratio.toFixed(2), color: "#facc15" },
+    { key: "coin_ratio", label: "场均拿野", icon: "🪙", getValue: p => p.avg_coin_ratio.toFixed(2), color: "#facc15" },
 ];
 
 function formatNum(n: number) {
