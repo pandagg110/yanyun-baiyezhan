@@ -5,7 +5,7 @@ import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
 import { recognizeScreenshots, OcrPlayer } from "@/services/ocr-service";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Match, User } from "@/types/app";
+import { Baiye, Match, Roster, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -56,6 +56,8 @@ export default function StatsUploadPage() {
     const [matchType, setMatchType] = useState("排位");
     const [coinValue, setCoinValue] = useState(720);
     const [notes, setNotes] = useState("");
+    const [rosters, setRosters] = useState<Roster[]>([]);
+    const [selectedRosterId, setSelectedRosterId] = useState<string>("");
 
     const [isChecking, setIsChecking] = useState(false);
     const [checkError, setCheckError] = useState<string | null>(null);
@@ -92,6 +94,16 @@ export default function StatsUploadPage() {
             if (!b) { router.push("/baiye"); return; }
             setBaiye(b);
             setTeamA(b.name);
+
+            // Load rosters for this baiye
+            try {
+                const rosterList = await SupabaseService.getRosters(baiyeId);
+                setRosters(rosterList);
+                if (rosterList.length > 0) {
+                    setSelectedRosterId(rosterList[0].id); // default to latest
+                }
+            } catch { /* ignore */ }
+
             setLoading(false);
         };
         init();
@@ -154,6 +166,7 @@ export default function StatsUploadPage() {
                     winner: winner,
                     baiye_id: baiyeId,
                     notes: notes.trim() || undefined,
+                    roster_id: selectedRosterId || undefined,
                     created_by: user?.id,
                 }),
             });
@@ -440,6 +453,28 @@ export default function StatsUploadPage() {
                                         🤝 平局
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* 排表关联 */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
+                                    📋 关联排表
+                                </label>
+                                <select
+                                    value={selectedRosterId}
+                                    onChange={(e) => setSelectedRosterId(e.target.value)}
+                                    className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                >
+                                    <option value="">不关联排表</option>
+                                    {rosters.map((r) => (
+                                        <option key={r.id} value={r.id}>
+                                            {r.roster_date} — {r.name || '未命名'}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-neutral-600">
+                                    关联后可在对战记录中快速查看当日排表
+                                </p>
                             </div>
 
                             <div>

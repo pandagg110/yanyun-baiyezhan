@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
         // ─── Mode 1: Create or find match ───
         const {
             team_a, team_b, match_start_time, match_type, coin_value,
-            winner, baiye_id, notes, created_by,
+            winner, baiye_id, notes, created_by, roster_id,
         } = body;
 
         if (!team_a || !team_b || !match_start_time) {
@@ -179,6 +179,7 @@ export async function POST(request: NextRequest) {
                 coin_value: coin_value ?? 720,
                 winner: winner || null,
                 notes: notes || null,
+                roster_id: roster_id || null,
                 created_by: created_by || null,
             })
             .select()

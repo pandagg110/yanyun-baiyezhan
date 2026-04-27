@@ -56,9 +56,21 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // If match has a linked roster, fetch it for the battle map
+        let roster = null;
+        if (match.roster_id) {
+            const { data: rosterData } = await supabase
+                .from('baiyezhan_rosters')
+                .select('id, roster_date, roster_data')
+                .eq('id', match.roster_id)
+                .single();
+            roster = rosterData || null;
+        }
+
         return NextResponse.json({
             match,
             stats: stats || [],
+            roster,
         });
     } catch (error: unknown) {
         console.error('Match Detail API Error:', error);

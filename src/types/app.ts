@@ -89,6 +89,7 @@ export interface Match {
     match_type?: string;        // 约战 | 正赛 | 排位 (default)
     coin_value?: number;         // 逗币基数，默认720
     notes?: string;
+    roster_id?: string;             // 关联排表 ID
     screenshot_urls?: string[];
     created_by?: string;
     created_at: string;

@@ -2,8 +2,9 @@
 
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
+import { BattleMap } from "@/components/feature/battle-map";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, MatchStat, User } from "@/types/app";
+import { Baiye, MatchStat, RosterData, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -102,6 +103,7 @@ interface MatchDetailCache {
         coin_value: number;
     };
     stats: MatchStat[];
+    roster?: { id: string; roster_date: string; roster_data: RosterData } | null;
     loading?: boolean;
 }
 
@@ -432,6 +434,78 @@ export default function AnalysisPage() {
     // Expanded match in per-match section
     const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
+    // ── AI match analysis cache ──
+    const [aiAnalysisCache, setAiAnalysisCache] = useState<Map<string, string>>(new Map());
+    const [aiAnalysisLoading, setAiAnalysisLoading] = useState<string | null>(null);
+
+    const fetchAiAnalysis = useCallback(async (matchId: string) => {
+        if (aiAnalysisCache.has(matchId)) return;
+        const detail = matchDetailCache.get(matchId);
+        if (!detail || detail.loading || detail.stats.length === 0) return;
+
+        setAiAnalysisLoading(matchId);
+        try {
+            const ourTeamStats = detail.stats.filter(s => s.team_name === baiye?.name);
+            const opponentStats = detail.stats.filter(s => s.team_name !== baiye?.name);
+
+            // Build roster summary if available
+            let rosterSummary: string | undefined;
+            if (detail.roster?.roster_data) {
+                const rd = detail.roster.roster_data;
+                const cols = rd.columns || [];
+                const jungleIdx = cols.findIndex(c => c.includes('打野'));
+                if (jungleIdx >= 0) {
+                    const lines: string[] = [];
+                    const processSquads = (squads: any[], prefix: string) => {
+                        squads.forEach((sq: any, si: number) => {
+                            for (const m of sq.members || []) {
+                                const cell = m.cells?.[jungleIdx];
+                                if (cell?.text) lines.push(`${prefix}${si + 1}队 ${m.name}: ${cell.text}`);
+                            }
+                        });
+                    };
+                    processSquads(rd.attack || [], '进攻');
+                    processSquads(rd.defense || [], '防守');
+                    if (lines.length > 0) rosterSummary = lines.join('\n');
+                }
+            }
+
+            const res = await fetch('/api/analysis/match-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    match: detail.match,
+                    ourTeamStats,
+                    opponentStats,
+                    rosterSummary,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.analysis) {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, data.analysis);
+                    return next;
+                });
+            } else {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, `分析失败: ${data.error || '未知错误'}`);
+                    return next;
+                });
+            }
+        } catch (err) {
+            console.error('AI analysis error:', err);
+            setAiAnalysisCache(prev => {
+                const next = new Map(prev);
+                next.set(matchId, '分析请求失败');
+                return next;
+            });
+        } finally {
+            setAiAnalysisLoading(null);
+        }
+    }, [aiAnalysisCache, matchDetailCache, baiye?.name]);
+
     // ── Sort states ──
     type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kd' | 'total_kills' | 'total_assists' | 'total_deaths';
     const [playerSort, setPlayerSort] = useState<SortState<PlayerSortKey>>({ key: 'kd', dir: 'desc' });
@@ -691,7 +765,7 @@ export default function AnalysisPage() {
             const data = await res.json();
             setMatchDetailCache(prev => {
                 const next = new Map(prev);
-                next.set(matchId, { match: data.match, stats: data.stats || [], loading: false });
+                next.set(matchId, { match: data.match, stats: data.stats || [], roster: data.roster || null, loading: false });
                 return next;
             });
         } catch (err) {
@@ -1560,7 +1634,7 @@ export default function AnalysisPage() {
                         </h3>
 
                         <div className="space-y-1">
-                            {matchSummaries.map((ms) => {
+                            {[...matchSummaries].sort((a, b) => new Date(b.match_start_time).getTime() - new Date(a.match_start_time).getTime()).map((ms) => {
                                 const isExpanded = expandedMatchId === ms.match_id;
                                 const typeBadge = ms.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
                                     ms.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
@@ -1636,21 +1710,72 @@ export default function AnalysisPage() {
                                                         加载对局详情...
                                                     </div>
                                                 ) : detail?.stats && detail.stats.length > 0 ? (
-                                                    [ms.team_a, ms.team_b].map(teamName => {
-                                                        const tStats = detail.stats.filter(s => s.team_name === teamName);
-                                                        if (tStats.length === 0) return null;
-                                                        return (
-                                                            <DetailTable
-                                                                key={teamName}
-                                                                teamName={teamName}
-                                                                stats={tStats}
+                                                    <>
+                                                        {/* ── Battle Map (top, when roster linked) ── */}
+                                                        {detail.roster?.roster_data && (
+                                                            <BattleMap
+                                                                rosterData={detail.roster.roster_data}
+                                                                stats={detail.stats.filter(s => s.team_name === (baiye?.name || ms.team_a))}
                                                                 coinValue={detail.match?.coin_value || ms.coin_value || 720}
-                                                                sort={detailSort}
-                                                                onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
-                                                                formatNum={formatNum}
+                                                                baiyeName={baiye?.name}
                                                             />
-                                                        );
-                                                    })
+                                                        )}
+
+                                                        {/* ── Data tables + AI analysis side by side ── */}
+                                                        <div className="flex flex-col lg:flex-row gap-4">
+                                                            {/* Left: Detail Tables */}
+                                                            <div className="flex-1 min-w-0 space-y-4">
+                                                                {[ms.team_a, ms.team_b].map(teamName => {
+                                                                    const tStats = detail.stats.filter(s => s.team_name === teamName);
+                                                                    if (tStats.length === 0) return null;
+                                                                    return (
+                                                                        <DetailTable
+                                                                            key={teamName}
+                                                                            teamName={teamName}
+                                                                            stats={tStats}
+                                                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
+                                                                            sort={detailSort}
+                                                                            onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
+                                                                            formatNum={formatNum}
+                                                                        />
+                                                                    );
+                                                                })}
+                                                            </div>
+
+                                                            {/* Right: AI Analysis */}
+                                                            <div className="lg:w-72 shrink-0">
+                                                                <div className="border border-neutral-700 bg-neutral-950/60 h-full">
+                                                                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700">
+                                                                        <span className="text-xs font-bold text-purple-400 uppercase">🤖 AI 战术分析</span>
+                                                                        {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                            <button
+                                                                                onClick={() => fetchAiAnalysis(ms.match_id)}
+                                                                                className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
+                                                                            >
+                                                                                分析此战
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="p-3 text-xs leading-relaxed">
+                                                                        {aiAnalysisLoading === ms.match_id ? (
+                                                                            <div className="flex flex-col items-center gap-2 py-6 text-neutral-500">
+                                                                                <div className="w-4 h-4 border-2 border-purple-500/40 border-t-purple-400 animate-spin rounded-full" />
+                                                                                <span>AI 分析中...</span>
+                                                                            </div>
+                                                                        ) : aiAnalysisCache.has(ms.match_id) ? (
+                                                                            <div className="text-neutral-300 whitespace-pre-wrap">
+                                                                                {aiAnalysisCache.get(ms.match_id)}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="text-neutral-600 text-center py-6">
+                                                                                点击「分析此战」获取 AI 战术洞察
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </>
                                                 ) : (
                                                     <div className="text-xs text-neutral-600 text-center py-4">暂无详细数据</div>
                                                 )}

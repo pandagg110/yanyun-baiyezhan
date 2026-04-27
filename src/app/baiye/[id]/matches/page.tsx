@@ -2,7 +2,7 @@
 
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Match, MatchScreenshot, MatchStat, User } from "@/types/app";
+import { Baiye, Match, MatchScreenshot, MatchStat, Roster, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -399,6 +399,10 @@ export default function MatchHistoryPage() {
     const isAdmin = user?.role === "admin";
     const canSubmit = user?.role === "admin" || user?.role === "vip";
 
+    // Rosters for binding
+    const [rosters, setRosters] = useState<Roster[]>([]);
+    const [bindingMatchId, setBindingMatchId] = useState<string | null>(null);
+
     useEffect(() => {
         const init = async () => {
             const u = await SupabaseService.getUser();
@@ -419,6 +423,13 @@ export default function MatchHistoryPage() {
             } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : "加载失败");
             }
+
+            // Load rosters for binding
+            try {
+                const rosterList = await SupabaseService.getRosters(baiyeId);
+                setRosters(rosterList);
+            } catch { /* ignore */ }
+
             setLoading(false);
         };
         init();
@@ -514,6 +525,26 @@ export default function MatchHistoryPage() {
         });
 
         alert(`✅ 已将「${oldName}」的代打记录更正为「${newName}」`);
+    };
+
+    // Bind roster to a match
+    const handleBindRoster = async (matchId: string, rosterId: string) => {
+        try {
+            const { data: { session } } = await SupabaseService.getSession();
+            const token = session?.access_token;
+            const res = await fetch(`/api/matches/${matchId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ roster_id: rosterId || null }),
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, roster_id: data.match?.roster_id ?? rosterId } : m));
+            setBindingMatchId(null);
+        } catch { /* ignore */ }
     };
 
     const formatTime = (t?: string) => {
@@ -655,6 +686,22 @@ export default function MatchHistoryPage() {
                                         </div>
                                     </div>
 
+                                    {/* Roster Badge */}
+                                    <div className="shrink-0">
+                                        {(m as Match).roster_id ? (
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 border border-purple-500/30 bg-purple-500/10 text-purple-400">
+                                                📋 {rosters.find(r => r.id === (m as Match).roster_id)?.roster_date || '排表'}
+                                            </span>
+                                        ) : canSubmit ? (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setBindingMatchId(bindingMatchId === m.id ? null : m.id); }}
+                                                className="text-[10px] font-bold px-1.5 py-0.5 border border-dashed border-neutral-600 text-neutral-500 hover:text-yellow-400 hover:border-yellow-500/30 transition-colors"
+                                            >
+                                                + 绑定排表
+                                            </button>
+                                        ) : null}
+                                    </div>
+
                                     {/* Winner Badge */}
                                     <div className="shrink-0">{getWinnerBadge(m)}</div>
 
@@ -696,6 +743,31 @@ export default function MatchHistoryPage() {
                                     </button>
                                 )}
                             </div>
+
+                            {/* Roster binding dropdown */}
+                            {bindingMatchId === m.id && (
+                                <div className="border-t border-neutral-700 px-4 py-2 bg-neutral-800/80 flex items-center gap-2">
+                                    <span className="text-xs text-neutral-400">📋 绑定排表：</span>
+                                    <select
+                                        className="bg-neutral-900 border border-neutral-600 text-xs text-white px-2 py-1 focus:border-yellow-500 outline-none"
+                                        defaultValue={(m as Match).roster_id || ""}
+                                        onChange={(e) => handleBindRoster(m.id, e.target.value)}
+                                    >
+                                        <option value="">不绑定</option>
+                                        {rosters.map((r) => (
+                                            <option key={r.id} value={r.id}>
+                                                {r.roster_date} — {r.name || '未命名'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={() => setBindingMatchId(null)}
+                                        className="text-xs text-neutral-500 hover:text-white px-1"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Expanded Detail */}
                             {expandedId === m.id && (

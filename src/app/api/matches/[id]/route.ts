@@ -131,3 +131,64 @@ export async function DELETE(
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
+
+/**
+ * PATCH /api/matches/[id]
+ * Update match fields (currently supports roster_id binding).
+ */
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params;
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        if (!supabaseUrl || !supabaseKey) {
+            return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+        }
+
+        const authHeader = request.headers.get('authorization');
+        const supabase = createClient(supabaseUrl, supabaseKey, {
+            global: { headers: authHeader ? { Authorization: authHeader } : {} },
+        });
+
+        // Verify the caller is admin or vip
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            return NextResponse.json({ error: '未登录' }, { status: 401 });
+        }
+
+        const body = await request.json();
+        const updates: Record<string, unknown> = {};
+
+        if ('roster_id' in body) {
+            updates.roster_id = body.roster_id || null;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return NextResponse.json({ error: '无更新字段' }, { status: 400 });
+        }
+
+        const { data: match, error: updateError } = await supabase
+            .from('baiyezhan_matches')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (updateError) {
+            console.error('Match update error:', updateError);
+            return NextResponse.json(
+                { error: '更新失败: ' + updateError.message },
+                { status: 500 }
+            );
+        }
+
+        return NextResponse.json({ status: 'updated', match });
+    } catch (error: unknown) {
+        console.error('Match PATCH error:', error);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return NextResponse.json({ error: message }, { status: 500 });
+    }
+}
