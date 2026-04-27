@@ -242,11 +242,16 @@ export async function GET(request: NextRequest) {
         }
 
         // Batch-fetch all stats in ONE query (fixes N+1 performance issue)
+        // NOTE: Supabase default row limit is 1000. For large datasets (e.g. 60 players × many matches),
+        // we must explicitly set a high enough limit to avoid silently truncating results.
         const matchIds = (matches || []).map(m => m.id);
-        const { data: allStats } = await supabase
-            .from('baiyezhan_match_stats')
-            .select('match_id, team_name')
-            .in('match_id', matchIds);
+        const { data: allStats } = matchIds.length > 0
+            ? await supabase
+                .from('baiyezhan_match_stats')
+                .select('match_id, team_name')
+                .in('match_id', matchIds)
+                .limit(10000)
+            : { data: [] };
 
         // Group stats by match_id in memory
         const statsMap = new Map<string, Set<string>>();
