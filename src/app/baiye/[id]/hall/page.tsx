@@ -235,6 +235,12 @@ export default function BaiyeHallPage() {
                             >
                                 📈 对战分析
                             </button>
+                            <button
+                                onClick={() => router.push(`/baiye/${baiyeId}/roster`)}
+                                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm border-2 border-emerald-700 hover:from-emerald-500 hover:to-teal-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                            >
+                                📋 排表工具
+                            </button>
                         </div>
                     </PixelCard>
 

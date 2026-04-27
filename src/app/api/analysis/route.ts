@@ -89,8 +89,9 @@ export async function GET(request: NextRequest) {
  * fall back to the original raw-data approach.
  * This ensures the app doesn't break during the migration transition.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function legacyFetch(
-    supabase: ReturnType<typeof createClient>,
+    supabase: any,
     baiyeName: string,
     matchType: string | null,
     period: string | null,
@@ -136,7 +137,7 @@ async function legacyFetch(
         });
     }
 
-    const matchIds = matches.map(m => m.id);
+    const matchIds = matches.map((m: { id: string }) => m.id);
     const { data: stats, error: statsError } = await supabase
         .from('baiyezhan_match_stats')
         .select('*')

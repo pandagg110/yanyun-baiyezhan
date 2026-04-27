@@ -174,3 +174,64 @@ export interface Todo {
     created_at: string;
     updated_at?: string;
 }
+
+// ──────────────────────────────────────
+// Roster System (排表系统)
+// ──────────────────────────────────────
+
+/** 人员池成员 */
+export interface RosterMember {
+    id: string;
+    baiye_id: string;
+    name: string;
+    created_at: string;
+}
+
+/** 下拉选项 */
+export interface RosterOption {
+    id: string;
+    baiye_id: string;
+    category: string;
+    label: string;
+    color?: string | null;
+    sort_order: number;
+}
+
+/** 单元格 */
+export interface RosterCell {
+    text: string;
+    color?: string | null;
+}
+
+/** 小队成员行 */
+export interface RosterSquadMember {
+    name: string;
+    isLeader?: boolean;
+    cells: RosterCell[];
+}
+
+/** 小队 */
+export interface RosterSquad {
+    members: RosterSquadMember[];
+    colorNote?: string;
+    timeNote?: string;
+}
+
+/** 排表数据（JSONB 结构） — 行=成员，列=阶段，格=战术指令 */
+export interface RosterData {
+    columns: string[];
+    attack: RosterSquad[];
+    defense: RosterSquad[];
+    wall: RosterSquad[];
+}
+
+/** 排表记录 */
+export interface Roster {
+    id: string;
+    baiye_id: string;
+    name: string;
+    roster_data: RosterData;
+    created_by?: string;
+    created_at: string;
+    updated_at?: string;
+}

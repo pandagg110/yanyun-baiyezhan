@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Baiye, Feedback, GuestbookMessage, Room, RoomData, RoomMember, RoomState, Todo, User, UserRole } from "@/types/app";
+import { Baiye, Feedback, GuestbookMessage, Room, RoomData, RoomMember, RoomState, Roster, RosterData, RosterMember, RosterOption, Todo, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -911,6 +911,224 @@ export const SupabaseService = {
             .delete()
             .eq('id', todoId);
 
+        if (error) throw error;
+    },
+
+    // ============ ROSTER METHODS (排表系统) ============
+
+    /**
+     * Get roster members (player pool) for a baiye
+     */
+    getRosterMembers: async (baiyeId: string): Promise<RosterMember[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_roster_members')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('name', { ascending: true });
+
+        if (error) throw error;
+        return (data as RosterMember[]) || [];
+    },
+
+    /**
+     * Add a member to the roster pool
+     */
+    addRosterMember: async (baiyeId: string, name: string): Promise<RosterMember> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_roster_members')
+            .insert({ baiye_id: baiyeId, name: name.trim() })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as RosterMember;
+    },
+
+    /**
+     * Batch add members to roster pool (skip duplicates)
+     */
+    batchAddRosterMembers: async (baiyeId: string, names: string[]): Promise<number> => {
+        const uniqueNames = [...new Set(names.map(n => n.trim()).filter(Boolean))];
+        let added = 0;
+        for (const name of uniqueNames) {
+            try {
+                await supabase
+                    .from('baiyezhan_roster_members')
+                    .insert({ baiye_id: baiyeId, name })
+                    .select()
+                    .single();
+                added++;
+            } catch {
+                // Skip duplicates
+            }
+        }
+        return added;
+    },
+
+    /**
+     * Remove a member from the roster pool
+     */
+    removeRosterMember: async (memberId: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_roster_members')
+            .delete()
+            .eq('id', memberId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Import player names from match_stats into roster pool
+     */
+    importMembersFromMatchStats: async (baiyeId: string): Promise<number> => {
+        // Get all unique player names from match stats for this baiye
+        const { data: matches } = await supabase
+            .from('baiyezhan_matches')
+            .select('id')
+            .eq('baiye_id', baiyeId);
+
+        if (!matches || matches.length === 0) return 0;
+
+        const matchIds = matches.map(m => m.id);
+        const { data: stats } = await supabase
+            .from('baiyezhan_match_stats')
+            .select('player_name')
+            .in('match_id', matchIds);
+
+        if (!stats || stats.length === 0) return 0;
+
+        const uniqueNames = [...new Set(stats.map((s: any) => s.player_name).filter(Boolean))];
+
+        // Get existing members
+        const { data: existing } = await supabase
+            .from('baiyezhan_roster_members')
+            .select('name')
+            .eq('baiye_id', baiyeId);
+
+        const existingNames = new Set((existing || []).map((e: any) => e.name));
+        const newNames = uniqueNames.filter(n => !existingNames.has(n));
+
+        if (newNames.length === 0) return 0;
+
+        const inserts = newNames.map(name => ({ baiye_id: baiyeId, name }));
+        const { error } = await supabase
+            .from('baiyezhan_roster_members')
+            .insert(inserts);
+
+        if (error) throw error;
+        return newNames.length;
+    },
+
+    /**
+     * Get all rosters for a baiye
+     */
+    getRosters: async (baiyeId: string): Promise<Roster[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_rosters')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+        return (data as Roster[]) || [];
+    },
+
+    /**
+     * Get a single roster by ID
+     */
+    getRoster: async (rosterId: string): Promise<Roster | null> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_rosters')
+            .select('*')
+            .eq('id', rosterId)
+            .single();
+
+        if (error) return null;
+        return data as Roster;
+    },
+
+    /**
+     * Create a new roster
+     */
+    createRoster: async (baiyeId: string, name: string, rosterData: RosterData, createdBy?: string): Promise<Roster> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_rosters')
+            .insert({
+                baiye_id: baiyeId,
+                name,
+                roster_data: rosterData as any,
+                created_by: createdBy || null,
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as Roster;
+    },
+
+    /**
+     * Update an existing roster
+     */
+    updateRoster: async (rosterId: string, updates: { name?: string; roster_data?: RosterData }): Promise<void> => {
+        const payload: any = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.roster_data !== undefined) payload.roster_data = updates.roster_data;
+
+        const { error } = await supabase
+            .from('baiyezhan_rosters')
+            .update(payload)
+            .eq('id', rosterId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Delete a roster
+     */
+    deleteRoster: async (rosterId: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_rosters')
+            .delete()
+            .eq('id', rosterId);
+
+        if (error) throw error;
+    },
+
+    // ============ ROSTER OPTIONS (下拉选项) ============
+
+    getRosterOptions: async (baiyeId: string): Promise<RosterOption[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_roster_options')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('sort_order', { ascending: true });
+        if (error) throw error;
+        return (data as RosterOption[]) || [];
+    },
+
+    addRosterOption: async (baiyeId: string, label: string, color?: string, category = 'general'): Promise<RosterOption> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_roster_options')
+            .insert({ baiye_id: baiyeId, label, color: color || null, category })
+            .select()
+            .single();
+        if (error) throw error;
+        return data as RosterOption;
+    },
+
+    updateRosterOption: async (id: string, updates: { label?: string; color?: string | null; category?: string }): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_roster_options')
+            .update(updates)
+            .eq('id', id);
+        if (error) throw error;
+    },
+
+    deleteRosterOption: async (id: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_roster_options')
+            .delete()
+            .eq('id', id);
         if (error) throw error;
     }
 };
