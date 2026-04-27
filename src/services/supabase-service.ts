@@ -1027,7 +1027,7 @@ export const SupabaseService = {
             .from('baiyezhan_rosters')
             .select('*')
             .eq('baiye_id', baiyeId)
-            .order('updated_at', { ascending: false });
+            .order('roster_date', { ascending: false });
 
         if (error) throw error;
         return (data as Roster[]) || [];
@@ -1064,6 +1064,82 @@ export const SupabaseService = {
 
         if (error) throw error;
         return data as Roster;
+    },
+
+    /**
+     * Upsert roster by date (one per baiye per date)
+     */
+    upsertRosterByDate: async (baiyeId: string, rosterDate: string, name: string, rosterData: RosterData, userId?: string): Promise<Roster> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_rosters')
+            .upsert({
+                baiye_id: baiyeId,
+                roster_date: rosterDate,
+                name,
+                roster_data: rosterData as any,
+                created_by: userId || null,
+            }, {
+                onConflict: 'baiye_id,roster_date'
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as Roster;
+    },
+
+    /**
+     * Import members from all historical rosters (all people ever used)
+     */
+    importMembersFromHistory: async (baiyeId: string): Promise<number> => {
+        const { data: rosters } = await supabase
+            .from('baiyezhan_rosters')
+            .select('roster_data')
+            .eq('baiye_id', baiyeId);
+
+        if (!rosters || rosters.length === 0) return 0;
+
+        const names = new Set<string>();
+        for (const r of rosters) {
+            const d = r.roster_data as any;
+            if (!d) continue;
+            // Attack & defense: RosterSquad[]
+            for (const section of [d.attack, d.defense]) {
+                if (!Array.isArray(section)) continue;
+                for (const squad of section) {
+                    if (!squad?.members) continue;
+                    for (const m of squad.members) {
+                        if (m.name) names.add(m.name);
+                    }
+                }
+            }
+            // Wall: could be old format (RosterSquad[]) or new (WallTower[])
+            if (Array.isArray(d.wall)) {
+                for (const item of d.wall) {
+                    if (!item?.members) continue;
+                    for (const m of item.members) {
+                        if (typeof m === 'string') names.add(m);           // new WallTower format
+                        else if (m?.name) names.add(m.name);               // old RosterSquad format
+                    }
+                }
+            }
+        }
+
+        if (names.size === 0) return 0;
+
+        const { data: existing } = await supabase
+            .from('baiyezhan_roster_members')
+            .select('name')
+            .eq('baiye_id', baiyeId);
+        const existingSet = new Set((existing || []).map((e: any) => e.name));
+        const newNames = [...names].filter(n => !existingSet.has(n));
+        if (newNames.length === 0) return 0;
+
+        const { error } = await supabase
+            .from('baiyezhan_roster_members')
+            .insert(newNames.map(name => ({ baiye_id: baiyeId, name })));
+        if (error) throw error;
+        return newNames.length;
     },
 
     /**

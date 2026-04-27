@@ -3,31 +3,57 @@
 import { RosterOptionsManager } from "@/components/feature/roster-options-manager";
 import { RosterPlayerPool } from "@/components/feature/roster-player-pool";
 import { RosterTable } from "@/components/feature/roster-table";
+import { RosterWall } from "@/components/feature/roster-wall";
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Roster, RosterData, RosterMember, RosterOption, RosterSquad, User } from "@/types/app";
+import { Roster, RosterData, RosterMember, RosterOption, RosterSquad, User, WallTower } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const DEFAULT_COLUMNS = [
-    "守塔", "守跳", "守车", "开局规划",
-    "塌掉后守跳", "守车", "铁桶",
-    "普通小野", "特殊情况野区规划"
+    "开局规划", "守塔", "守鹅", "守车",
+    "铁桶（boss没拿到）", "打野",
+    "25分boss规划", "15分boss规划"
 ];
 
 const EMPTY_SQUAD = (): RosterSquad => ({ members: [], colorNote: "花脸色标点" });
+
+const EMPTY_WALL = (): WallTower[] => [
+    { name: "上塔", members: [] },
+    { name: "中塔", members: [] },
+    { name: "下塔", members: [] },
+];
 
 const EMPTY_ROSTER_DATA = (): RosterData => ({
     columns: [...DEFAULT_COLUMNS],
     attack: [EMPTY_SQUAD(), EMPTY_SQUAD(), EMPTY_SQUAD()],
     defense: [EMPTY_SQUAD(), EMPTY_SQUAD(), EMPTY_SQUAD()],
-    wall: [EMPTY_SQUAD(), EMPTY_SQUAD(), EMPTY_SQUAD()],
+    wall: EMPTY_WALL(),
 });
 
-function deepClone<T>(obj: T): T {
-    return JSON.parse(JSON.stringify(obj));
+/** Extract all member names from a roster */
+function extractNamesFromRoster(data: RosterData): string[] {
+    const names: string[] = [];
+    for (const section of [data.attack, data.defense]) {
+        if (!Array.isArray(section)) continue;
+        for (const squad of section) {
+            if (!squad?.members) continue;
+            for (const m of squad.members) { if (m.name) names.push(m.name); }
+        }
+    }
+    // Wall uses string[] members
+    if (Array.isArray(data.wall)) {
+        for (const tower of data.wall) {
+            if (tower?.members) {
+                for (const name of tower.members) { if (name) names.push(name); }
+            }
+        }
+    }
+    return [...new Set(names)];
 }
+
+function todayStr() { return new Date().toISOString().split("T")[0]; }
 
 type SectionTab = "attack" | "defense" | "wall";
 
@@ -37,7 +63,6 @@ export default function RosterPage() {
     const router = useRouter();
 
     const [user, setUser] = useState<User | null>(null);
-    const [baiye, setBaiye] = useState<Baiye | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -47,15 +72,82 @@ export default function RosterPage() {
     const [rosters, setRosters] = useState<Roster[]>([]);
     const [currentRosterId, setCurrentRosterId] = useState<string | null>(null);
     const [rosterName, setRosterName] = useState("排表");
+    const [rosterDate, setRosterDate] = useState(todayStr());
     const [hasChanges, setHasChanges] = useState(false);
     const [activeTab, setActiveTab] = useState<SectionTab>("attack");
-    const [showRosterList, setShowRosterList] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
 
     const attackRef = useRef<HTMLDivElement>(null);
     const defenseRef = useRef<HTMLDivElement>(null);
     const wallRef = useRef<HTMLDivElement>(null);
 
     const isAdmin = user?.role === "admin" || user?.role === "vip";
+
+    // Computed assigned sets
+    const attackAssigned = rosterData.attack.flatMap((sq) => sq.members.map((m) => m.name));
+    const defenseAssigned = rosterData.defense.flatMap((sq) => sq.members.map((m) => m.name));
+    const globalAssigned = new Set([...attackAssigned, ...defenseAssigned]);
+    const wallAssigned = new Set(
+        Array.isArray(rosterData.wall)
+            ? rosterData.wall.flatMap((t) => t.members || [])
+            : []
+    );
+
+    /**
+     * Build pool from roster data only.
+     * Pool = names from current roster tables. If empty roster → empty pool.
+     * After building, sync to DB for persistence (so history import can find them later).
+     */
+    const buildPoolFromRoster = async (data: RosterData) => {
+        const namesFromRoster = extractNamesFromRoster(data);
+        if (namesFromRoster.length === 0) {
+            setMembers([]);
+            return;
+        }
+        // Ensure they exist in DB
+        await SupabaseService.batchAddRosterMembers(baiyeId, namesFromRoster);
+        // Fetch from DB to get IDs, but only keep those from roster
+        const allDb = await SupabaseService.getRosterMembers(baiyeId);
+        const rosterSet = new Set(namesFromRoster);
+        setMembers(allDb.filter((m) => rosterSet.has(m.name)).sort((a, b) => a.name.localeCompare(b.name)));
+    };
+
+    /** Load a specific roster (from history panel) */
+    const loadRoster = async (roster: Roster) => {
+        const data = normalizeWallData(roster.roster_data || EMPTY_ROSTER_DATA());
+        setCurrentRosterId(roster.id);
+        setRosterName(roster.name);
+        setRosterDate(roster.roster_date || todayStr());
+        setRosterData(data);
+        setHasChanges(false);
+        setShowHistory(false);
+        await buildPoolFromRoster(data);
+    };
+
+    /** Normalize old wall format (RosterSquad[]) to new WallTower[] */
+    function normalizeWallData(data: RosterData): RosterData {
+        if (!data.wall || !Array.isArray(data.wall)) {
+            return { ...data, wall: EMPTY_WALL() };
+        }
+        // Check if already new format
+        const first = data.wall[0];
+        if (first && typeof first === "object" && "name" in first && typeof (first as any).name === "string" && Array.isArray((first as any).members)) {
+            // Might be new format — check if members are strings
+            if ((first as any).members.length === 0 || typeof (first as any).members[0] === "string") {
+                return data; // Already new format
+            }
+        }
+        // Old format: RosterSquad[] → convert
+        const towerNames = ["上塔", "中塔", "下塔"];
+        const newWall: WallTower[] = towerNames.map((name, i) => {
+            const oldSquad = (data.wall as any)[i];
+            return {
+                name,
+                members: oldSquad?.members?.map((m: any) => m.name).filter(Boolean).slice(0, 3) || [],
+            };
+        });
+        return { ...data, wall: newWall };
+    }
 
     useEffect(() => {
         const init = async () => {
@@ -64,20 +156,22 @@ export default function RosterPage() {
             setUser(u);
             const b = await SupabaseService.getBaiye(baiyeId);
             if (!b) { router.push("/baiye"); return; }
-            setBaiye(b);
-            const [m, o, r] = await Promise.all([
-                SupabaseService.getRosterMembers(baiyeId),
+            const [o, r] = await Promise.all([
                 SupabaseService.getRosterOptions(baiyeId),
                 SupabaseService.getRosters(baiyeId),
             ]);
-            setMembers(m);
             setOptions(o);
             setRosters(r);
             if (r.length > 0) {
-                setCurrentRosterId(r[0].id);
-                setRosterName(r[0].name);
-                setRosterData(r[0].roster_data || EMPTY_ROSTER_DATA());
+                const latest = r[0];
+                const data = normalizeWallData(latest.roster_data || EMPTY_ROSTER_DATA());
+                setCurrentRosterId(latest.id);
+                setRosterName(latest.name);
+                setRosterDate(latest.roster_date || todayStr());
+                setRosterData(data);
+                await buildPoolFromRoster(data);
             }
+            // If no rosters → pool stays empty
             setLoading(false);
         };
         init();
@@ -88,79 +182,82 @@ export default function RosterPage() {
         try {
             const m = await SupabaseService.addRosterMember(baiyeId, name);
             setMembers((prev) => [...prev, m].sort((a, b) => a.name.localeCompare(b.name)));
-        } catch { alert("添加失败或已存在"); }
+        } catch { /* ignore */ }
     };
     const handleRemoveMember = async (id: string) => {
-        try { await SupabaseService.removeRosterMember(id); setMembers((prev) => prev.filter((m) => m.id !== id)); } catch { alert("删除失败"); }
+        try { await SupabaseService.removeRosterMember(id); setMembers((prev) => prev.filter((m) => m.id !== id)); }
+        catch { /* ignore */ }
     };
-    const handleImport = async () => {
+    const handleHistoryImport = async () => {
         try {
-            const count = await SupabaseService.importMembersFromMatchStats(baiyeId);
-            if (count > 0) { alert(`导入 ${count} 名`); setMembers(await SupabaseService.getRosterMembers(baiyeId)); }
-            else alert("无新成员可导入");
-        } catch { alert("导入失败"); }
+            const count = await SupabaseService.importMembersFromHistory(baiyeId);
+            if (count > 0) {
+                setMembers(await SupabaseService.getRosterMembers(baiyeId));
+            }
+        } catch { /* ignore */ }
+    };
+    const handleBatchAdd = async (names: string[]) => {
+        const count = await SupabaseService.batchAddRosterMembers(baiyeId, names);
+        if (count > 0) {
+            setMembers(await SupabaseService.getRosterMembers(baiyeId));
+        }
+    };
+    const handleRenameMember = async (id: string, newName: string) => {
+        try {
+            await SupabaseService.removeRosterMember(id);
+            const m = await SupabaseService.addRosterMember(baiyeId, newName);
+            setMembers((prev) => prev.filter((x) => x.id !== id).concat(m).sort((a, b) => a.name.localeCompare(b.name)));
+        } catch { /* ignore */ }
     };
 
     // Options handlers
-    const handleAddOption = async (label: string, color?: string) => {
-        try {
-            const o = await SupabaseService.addRosterOption(baiyeId, label, color);
-            setOptions((prev) => [...prev, o]);
-        } catch { alert("添加失败或已存在"); }
+    const handleAddOption = async (label: string, color?: string, category?: string) => {
+        try { const o = await SupabaseService.addRosterOption(baiyeId, label, color, category || 'general'); setOptions((prev) => [...prev, o]); }
+        catch { /* ignore */ }
     };
     const handleDeleteOption = async (id: string) => {
         try { await SupabaseService.deleteRosterOption(id); setOptions((prev) => prev.filter((o) => o.id !== id)); }
-        catch { alert("删除失败"); }
+        catch { /* ignore */ }
+    };
+    const handleUpdateOption = async (id: string, updates: { label?: string; color?: string | null }) => {
+        try { await SupabaseService.updateRosterOption(id, updates); setOptions((prev) => prev.map((o) => o.id === id ? { ...o, ...updates } : o)); }
+        catch { /* ignore */ }
     };
 
     // Table data handlers
-    const handleColumnsChange = (cols: string[]) => {
-        setRosterData((prev) => ({ ...prev, columns: cols }));
-        setHasChanges(true);
-    };
-    const handleSquadsChange = (section: SectionTab) => (squads: RosterSquad[]) => {
+    const handleColumnsChange = (cols: string[]) => { setRosterData((prev) => ({ ...prev, columns: cols })); setHasChanges(true); };
+    const handleSquadsChange = (section: "attack" | "defense") => (squads: RosterSquad[]) => {
         setRosterData((prev) => ({ ...prev, [section]: squads }));
         setHasChanges(true);
     };
+    const handleWallChange = (wall: WallTower[]) => {
+        setRosterData((prev) => ({ ...prev, wall }));
+        setHasChanges(true);
+    };
 
-    // Save / Load
+    // Save (upsert by date)
     const handleSave = async () => {
-        if (!user) return;
+        if (!user || !rosterDate) return;
         setSaving(true);
         try {
-            if (currentRosterId) {
-                await SupabaseService.updateRoster(currentRosterId, { name: rosterName, roster_data: rosterData });
-            } else {
-                const r = await SupabaseService.createRoster(baiyeId, rosterName, rosterData, user.id);
-                setCurrentRosterId(r.id);
-            }
+            const r = await SupabaseService.upsertRosterByDate(baiyeId, rosterDate, rosterName, rosterData, user.id);
+            setCurrentRosterId(r.id);
             setRosters(await SupabaseService.getRosters(baiyeId));
             setHasChanges(false);
-            alert("排表已保存！");
-        } catch (e: any) { alert("保存失败: " + e.message); }
+        } catch { /* ignore */ }
         finally { setSaving(false); }
     };
 
-    const handleLoad = (r: Roster) => {
-        setCurrentRosterId(r.id);
-        setRosterName(r.name);
-        setRosterData(r.roster_data || EMPTY_ROSTER_DATA());
-        setShowRosterList(false);
-        setHasChanges(false);
-    };
-    const handleNew = () => { setCurrentRosterId(null); setRosterName("新排表"); setRosterData(EMPTY_ROSTER_DATA()); setShowRosterList(false); setHasChanges(false); };
-    const handleDeleteRoster = async (id: string) => {
-        if (!confirm("确定删除？")) return;
-        try { await SupabaseService.deleteRoster(id); setRosters(await SupabaseService.getRosters(baiyeId)); if (currentRosterId === id) handleNew(); }
-        catch { alert("删除失败"); }
+    const handleNew = () => {
+        setCurrentRosterId(null); setRosterName("排表"); setRosterDate(todayStr());
+        setRosterData(EMPTY_ROSTER_DATA()); setMembers([]); setHasChanges(false);
     };
 
-    // Export as image
+    // Export
     const handleExport = async (section: SectionTab) => {
         const refMap = { attack: attackRef, defense: defenseRef, wall: wallRef };
         const el = refMap[section].current;
         if (!el) return;
-        // Hide admin-only elements
         const noExport = el.querySelectorAll("[data-no-export]");
         noExport.forEach((n) => (n as HTMLElement).style.display = "none");
         try {
@@ -168,58 +265,27 @@ export default function RosterPage() {
             const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2 });
             const link = document.createElement("a");
             const labels = { attack: "进攻", defense: "防守", wall: "人墙" };
-            link.download = `${rosterName}_${labels[section]}.png`;
+            link.download = `${rosterDate}_${rosterName}_${labels[section]}.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
-        } finally {
-            noExport.forEach((n) => (n as HTMLElement).style.display = "");
-        }
+        } finally { noExport.forEach((n) => (n as HTMLElement).style.display = ""); }
     };
 
     const memberNames = members.map((m) => m.name);
 
-    const TAB_CONFIG: { key: SectionTab; label: string; emoji: string; color: string; headerColor: string }[] = [
-        { key: "attack", label: "进攻", emoji: "⚔️", color: "from-red-600 to-orange-600", headerColor: "#fdd" },
-        { key: "defense", label: "防守", emoji: "🛡️", color: "from-blue-600 to-cyan-600", headerColor: "#ddf" },
-        { key: "wall", label: "人墙", emoji: "🧱", color: "from-purple-600 to-pink-600", headerColor: "#ede" },
+    const TAB_CONFIG: { key: SectionTab; label: string; emoji: string; color: string }[] = [
+        { key: "attack", label: "进攻", emoji: "⚔️", color: "from-red-600 to-orange-600" },
+        { key: "defense", label: "防守", emoji: "🛡️", color: "from-blue-600 to-cyan-600" },
+        { key: "wall", label: "人墙", emoji: "🧱", color: "from-purple-600 to-pink-600" },
     ];
+
+    // Format date as MM-DD
+    const dateMMDD = rosterDate ? (() => { const parts = rosterDate.split("-"); return parts.length >= 3 ? `${parts[1]}-${parts[2]}` : rosterDate; })() : "";
 
     if (loading) return <div className="min-h-screen bg-neutral-900 flex items-center justify-center text-white">正在加载...</div>;
 
-    const tabConf = TAB_CONFIG.find((t) => t.key === activeTab)!;
-
     return (
         <main className="min-h-screen bg-neutral-900 text-white">
-            {/* Roster list modal */}
-            {showRosterList && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <PixelCard className="bg-neutral-800 max-w-md w-full space-y-3 max-h-[80vh] overflow-y-auto">
-                        <div className="flex justify-between items-center text-lg font-bold text-yellow-400 uppercase border-b-2 border-yellow-400/20 pb-2">
-                            <span>📂 排表列表</span>
-                            <button onClick={() => setShowRosterList(false)} className="text-neutral-500 hover:text-white text-sm">✕</button>
-                        </div>
-                        {isAdmin && <button onClick={handleNew} className="w-full px-3 py-2 text-xs font-bold border-2 border-dashed border-neutral-600 text-neutral-400 hover:text-white hover:border-yellow-500 transition-colors">＋ 新建空白排表</button>}
-                        {rosters.length === 0 ? <div className="text-xs text-neutral-600 text-center py-4">暂无排表</div> : (
-                            <div className="space-y-2">
-                                {rosters.map((r) => (
-                                    <div key={r.id} className={`border-2 p-2 flex items-center justify-between ${currentRosterId === r.id ? "border-yellow-500 bg-yellow-500/10" : "border-neutral-700"}`}>
-                                        <div>
-                                            <div className="text-sm font-bold">{r.name}</div>
-                                            <div className="text-[10px] text-neutral-500">{new Date(r.updated_at || r.created_at).toLocaleString("zh-CN")}</div>
-                                        </div>
-                                        <div className="flex gap-1">
-                                            <button onClick={() => handleLoad(r)} className="px-2 py-1 text-[10px] font-bold border border-neutral-600 bg-neutral-700 text-white hover:bg-neutral-600">加载</button>
-                                            {isAdmin && <button onClick={() => handleDeleteRoster(r.id)} className="px-2 py-1 text-[10px] font-bold border border-red-800 text-red-400 hover:bg-red-900/30">删除</button>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </PixelCard>
-                </div>
-            )}
-
-            {/* Header */}
             <header className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur border-b-4 border-black px-4 py-3">
                 <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
@@ -227,76 +293,100 @@ export default function RosterPage() {
                         <h1 className="text-xl font-bold text-yellow-500 uppercase">📋 排表工具</h1>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                        {isAdmin ? (
+                        {isAdmin && (
                             <input value={rosterName} onChange={(e) => { setRosterName(e.target.value); setHasChanges(true); }}
-                                className="w-32 bg-neutral-800 border-2 border-neutral-700 px-2 py-1 text-xs text-white focus:border-yellow-500 outline-none" placeholder="排表名称" />
-                        ) : <span className="text-sm text-neutral-300">{rosterName}</span>}
-                        {hasChanges && <span className="text-[10px] text-yellow-500">● 未保存</span>}
-                        <button onClick={() => setShowRosterList(true)} className="px-2 py-1 text-xs font-bold border-2 border-neutral-600 bg-neutral-700 text-white hover:bg-neutral-600">📂</button>
+                                className="w-24 bg-neutral-800 border-2 border-neutral-700 px-2 py-1 text-xs text-white focus:border-yellow-500 outline-none" placeholder="名称" />
+                        )}
+                        <input type="date" value={rosterDate} onChange={(e) => { setRosterDate(e.target.value); setHasChanges(true); }}
+                            className="bg-neutral-800 border-2 border-neutral-700 px-2 py-1 text-xs text-white focus:border-yellow-500 outline-none" />
+                        {hasChanges && <span className="text-[10px] text-yellow-500 animate-pulse">● 未保存</span>}
                         {isAdmin && <PixelButton size="sm" onClick={handleSave} isLoading={saving}>💾 保存</PixelButton>}
-                        <button onClick={() => handleExport(activeTab)} className="px-2 py-1 text-xs font-bold border-2 border-green-700 bg-green-600 text-white hover:bg-green-500" title="导出当前页为图片">📷 导出</button>
+                        <button onClick={() => handleExport(activeTab)} className="px-2 py-1 text-xs font-bold border-2 border-green-700 bg-green-600 text-white hover:bg-green-500">📷 导出</button>
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto p-4">
                 <div className="flex flex-col lg:flex-row gap-4">
-                    {/* Left sidebar */}
-                    <div className="w-full lg:w-52 shrink-0 space-y-3">
-                        <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] space-y-3">
+                    <div className="w-full lg:w-48 shrink-0 space-y-3">
+                        <div className="lg:sticky lg:top-20 space-y-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+                            {/* History */}
+                            <PixelCard className="bg-neutral-800">
+                                <button onClick={() => setShowHistory(!showHistory)}
+                                    className="w-full text-left text-sm font-bold text-yellow-400 uppercase flex justify-between items-center">
+                                    <span>📅 历史排表</span>
+                                    <span className="text-[10px] text-neutral-600">{showHistory ? "▼" : "▶"} {rosters.length}</span>
+                                </button>
+                                {showHistory && (
+                                    <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto">
+                                        {isAdmin && (
+                                            <button onClick={handleNew}
+                                                className="w-full px-2 py-1.5 text-[10px] font-bold border-2 border-dashed border-neutral-600 text-neutral-400 hover:text-white hover:border-yellow-500">
+                                                ＋ 新建空白
+                                            </button>
+                                        )}
+                                        {rosters.map((r) => (
+                                            <button key={r.id} onClick={() => loadRoster(r)}
+                                                className={`w-full px-2 py-1.5 text-left text-[11px] border-2 transition-colors ${
+                                                    currentRosterId === r.id ? "border-yellow-500 bg-yellow-500/10 text-yellow-400" : "border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500"
+                                                }`}>
+                                                <div className="font-bold">{r.roster_date}</div>
+                                                <div className="text-[9px] text-neutral-500">{r.name}</div>
+                                            </button>
+                                        ))}
+                                        {rosters.length === 0 && <div className="text-[10px] text-neutral-600 text-center py-2">暂无</div>}
+                                    </div>
+                                )}
+                            </PixelCard>
+
                             <RosterPlayerPool
                                 members={members}
-                                assignedNames={new Set()}
+                                assignedNames={globalAssigned}
                                 isAdmin={isAdmin}
                                 onAddMember={handleAddMember}
                                 onRemoveMember={handleRemoveMember}
-                                onImportFromStats={handleImport}
+                                onHistoryImport={handleHistoryImport}
+                                onBatchAdd={handleBatchAdd}
+                                onRenameMember={handleRenameMember}
                             />
                             {isAdmin && (
-                                <RosterOptionsManager
-                                    options={options}
-                                    onAdd={handleAddOption}
-                                    onDelete={handleDeleteOption}
-                                />
+                                <RosterOptionsManager options={options} onAdd={handleAddOption} onDelete={handleDeleteOption} onUpdate={handleUpdateOption} />
                             )}
                         </div>
                     </div>
 
-                    {/* Main content */}
                     <div className="flex-1 min-w-0 space-y-4">
-                        {/* Section tabs */}
-                        <div className="flex gap-2">
-                            {TAB_CONFIG.map((t) => (
-                                <button
-                                    key={t.key}
-                                    onClick={() => setActiveTab(t.key)}
-                                    className={`flex-1 py-2 text-sm font-bold border-4 border-black transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[1px] active:translate-y-[1px] ${
-                                        activeTab === t.key
-                                            ? `bg-gradient-to-r ${t.color} text-white`
-                                            : "bg-neutral-800 text-neutral-500 hover:text-white"
-                                    }`}
-                                >
-                                    {t.emoji} {t.label}
-                                </button>
-                            ))}
+                        <div className="flex gap-1.5" style={{ transition: "all 0.3s ease" }}>
+                            {TAB_CONFIG.map((t) => {
+                                const isActive = activeTab === t.key;
+                                return (
+                                    <button key={t.key} onClick={() => setActiveTab(t.key)}
+                                        style={{ flex: isActive ? 5 : 1, transition: "flex 0.3s ease" }}
+                                        className={`py-2.5 font-bold border-4 border-black shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[1px] active:translate-y-[1px] whitespace-nowrap overflow-hidden ${
+                                            isActive ? `bg-gradient-to-r ${t.color} text-white text-base` : "bg-neutral-800 text-neutral-500 hover:text-white text-xs"
+                                        }`}>
+                                        {isActive
+                                            ? <>{t.emoji} {t.label} <span className="ml-1 text-sm opacity-80">{dateMMDD}</span></>
+                                            : <>{t.emoji}<span className="hidden sm:inline"> {t.label}</span></>}
+                                    </button>
+                                );
+                            })}
                         </div>
-
-                        {/* Table */}
                         <div className="overflow-x-auto">
                             <div style={{ display: activeTab === "attack" ? "block" : "none" }}>
                                 <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.columns} squads={rosterData.attack}
-                                    isAdmin={isAdmin} options={options} availableMembers={memberNames}
+                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
                                     onColumnsChange={handleColumnsChange} onSquadsChange={handleSquadsChange("attack")} headerColor="#fdd" />
                             </div>
                             <div style={{ display: activeTab === "defense" ? "block" : "none" }}>
                                 <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
-                                    isAdmin={isAdmin} options={options} availableMembers={memberNames}
+                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
                                     onColumnsChange={handleColumnsChange} onSquadsChange={handleSquadsChange("defense")} headerColor="#ddf" />
                             </div>
                             <div style={{ display: activeTab === "wall" ? "block" : "none" }}>
-                                <RosterTable ref={wallRef} title="人墙" emoji="🧱" columns={rosterData.columns} squads={rosterData.wall}
-                                    isAdmin={isAdmin} options={options} availableMembers={memberNames}
-                                    onColumnsChange={handleColumnsChange} onSquadsChange={handleSquadsChange("wall")} headerColor="#ede" />
+                                <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}
+                                    availableMembers={memberNames} wallAssignedNames={wallAssigned} globalAssignedNames={globalAssigned}
+                                    onTowersChange={handleWallChange} />
                             </div>
                         </div>
                     </div>

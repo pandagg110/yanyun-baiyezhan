@@ -217,12 +217,18 @@ export interface RosterSquad {
     timeNote?: string;
 }
 
+/** 人墙塔位 */
+export interface WallTower {
+    name: string;       // 上塔 / 中塔 / 下塔
+    members: string[];  // max 3 names
+}
+
 /** 排表数据（JSONB 结构） — 行=成员，列=阶段，格=战术指令 */
 export interface RosterData {
     columns: string[];
     attack: RosterSquad[];
     defense: RosterSquad[];
-    wall: RosterSquad[];
+    wall: WallTower[];
 }
 
 /** 排表记录 */
@@ -230,6 +236,7 @@ export interface Roster {
     id: string;
     baiye_id: string;
     name: string;
+    roster_date: string;
     roster_data: RosterData;
     created_by?: string;
     created_at: string;
