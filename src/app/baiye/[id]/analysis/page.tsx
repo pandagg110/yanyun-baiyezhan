@@ -515,6 +515,33 @@ export default function AnalysisPage() {
         }
     }, [aiAnalysisCache, matchDetailCache, baiye?.name, baiyeId]);
 
+    // Load saved AI analysis from DB (no generation, silent)
+    const loadSavedAiAnalysis = useCallback(async (matchId: string) => {
+        if (aiAnalysisCache.has(matchId)) return; // already loaded
+        if (!baiyeId) return;
+        try {
+            const res = await fetch('/api/analysis/match-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    match: { id: matchId },
+                    baiyeId,
+                    loadOnly: true,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.analysis && data.saved) {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, data.analysis);
+                    return next;
+                });
+            }
+        } catch {
+            // Silent fail — user can still manually trigger
+        }
+    }, [aiAnalysisCache, baiyeId]);
+
     // ── Sort states ──
     type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kd' | 'total_kills' | 'total_assists' | 'total_deaths';
     const [playerSort, setPlayerSort] = useState<SortState<PlayerSortKey>>({ key: 'kd', dir: 'desc' });
@@ -787,15 +814,16 @@ export default function AnalysisPage() {
         }
     }, [matchDetailCache]);
 
-    // When expandedMatchId changes, fetch match details
+    // When expandedMatchId changes, fetch match details + load saved AI analysis
     useEffect(() => {
         if (expandedMatchId) {
             fetchMatchDetail(expandedMatchId);
+            loadSavedAiAnalysis(expandedMatchId);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [expandedMatchId]);
 
-    // NOTE: AI analysis is manual-only. User must click "分析此战" to trigger.
+    // NOTE: AI analysis GENERATION is manual-only. Saved analyses are auto-loaded.
 
     // ── Chart rendering (SVG) — with comparison support ──
     const renderChart = () => {

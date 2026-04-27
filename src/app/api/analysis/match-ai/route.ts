@@ -63,11 +63,11 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { match, ourTeamStats, opponentStats, rosterSummary, baiyeId, regenerate, dragonInfo } = body;
+        const { match, ourTeamStats, opponentStats, rosterSummary, baiyeId, regenerate, dragonInfo, loadOnly } = body;
 
-        if (!match || !ourTeamStats) {
+        if (!match?.id) {
             return NextResponse.json(
-                { error: 'Missing required data' },
+                { error: 'Missing required data (match.id)' },
                 { status: 400 }
             );
         }
@@ -98,7 +98,18 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // ── Generate AI analysis ──
+        // ── loadOnly mode: only return saved data, don't generate ──
+        if (loadOnly) {
+            return NextResponse.json({ analysis: null, saved: false });
+        }
+
+        // ── Generate AI analysis (requires full stats) ──
+        if (!ourTeamStats) {
+            return NextResponse.json(
+                { error: 'Missing required data for generation' },
+                { status: 400 }
+            );
+        }
         const coinValue = match.coin_value || 720;
         const ourStats = ourTeamStats.map((s: any) => {
             const cr = (s.coins || 0) / coinValue;
