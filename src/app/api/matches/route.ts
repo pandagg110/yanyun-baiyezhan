@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
         const {
             team_a, team_b, match_start_time, match_type, coin_value,
             winner, baiye_id, notes, created_by, roster_id,
+            big_dragon_team, small_dragon_team,
         } = body;
 
         if (!team_a || !team_b || !match_start_time) {
@@ -181,6 +182,8 @@ export async function POST(request: NextRequest) {
                 notes: notes || null,
                 roster_id: roster_id || null,
                 created_by: created_by || null,
+                big_dragon_team: big_dragon_team || null,
+                small_dragon_team: small_dragon_team || null,
             })
             .select()
             .single();

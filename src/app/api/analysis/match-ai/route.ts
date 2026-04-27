@@ -35,7 +35,11 @@ const SYSTEM_PROMPT = `你是一个《燕云十六声》百业战（30v30）的�
  * POST /api/analysis/match-ai
  * 
  * AI-powered match analysis for a single expanded match.
- * Body: { match, stats, roster? }
+ * Body: { match, ourTeamStats, opponentStats, rosterSummary?, baiyeId?, regenerate? }
+ * 
+ * - On first call: generates AI analysis, saves to DB, returns it.
+ * - On subsequent calls (without regenerate): returns saved analysis from DB.
+ * - With regenerate=true: re-generates and overwrites saved analysis.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -48,7 +52,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { match, ourTeamStats, opponentStats, rosterSummary } = body;
+        const { match, ourTeamStats, opponentStats, rosterSummary, baiyeId, regenerate } = body;
 
         if (!match || !ourTeamStats) {
             return NextResponse.json(
@@ -57,7 +61,33 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Build analysis prompt
+        // ── Try to load saved analysis from DB (unless regenerating) ──
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        let supabase: ReturnType<typeof createClient> | null = null;
+
+        if (supabaseUrl && supabaseKey) {
+            supabase = createClient(supabaseUrl, supabaseKey);
+
+            if (!regenerate && baiyeId) {
+                const { data: saved } = await supabase
+                    .from('baiyezhan_match_ai_analysis' as any)
+                    .select('analysis_text, updated_at')
+                    .eq('match_id', match.id)
+                    .eq('baiye_id', baiyeId)
+                    .maybeSingle() as { data: { analysis_text: string; updated_at: string } | null };
+
+                if (saved?.analysis_text) {
+                    return NextResponse.json({
+                        analysis: saved.analysis_text,
+                        saved: true,
+                        savedAt: saved.updated_at,
+                    });
+                }
+            }
+        }
+
+        // ── Generate AI analysis ──
         const coinValue = match.coin_value || 720;
         const ourStats = ourTeamStats.map((s: any) => {
             const cr = (s.coins || 0) / coinValue;
@@ -140,8 +170,30 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const analysisText = text.trim();
+
+        // ── Save to DB ──
+        if (supabase && baiyeId) {
+            try {
+                await (supabase as any)
+                    .from('baiyezhan_match_ai_analysis')
+                    .upsert(
+                        {
+                            match_id: match.id,
+                            baiye_id: baiyeId,
+                            analysis_text: analysisText,
+                        },
+                        { onConflict: 'match_id,baiye_id' }
+                    );
+            } catch (saveErr) {
+                console.error('Failed to save AI analysis:', saveErr);
+                // Don't fail the request if save fails — still return the analysis
+            }
+        }
+
         return NextResponse.json({
-            analysis: text.trim(),
+            analysis: analysisText,
+            saved: true,
         });
     } catch (error: unknown) {
         console.error('Match AI Analysis Error:', error);

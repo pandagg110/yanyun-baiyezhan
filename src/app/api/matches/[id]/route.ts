@@ -165,6 +165,12 @@ export async function PATCH(
         if ('roster_id' in body) {
             updates.roster_id = body.roster_id || null;
         }
+        if ('big_dragon_team' in body) {
+            updates.big_dragon_team = body.big_dragon_team || null;
+        }
+        if ('small_dragon_team' in body) {
+            updates.small_dragon_team = body.small_dragon_team || null;
+        }
 
         if (Object.keys(updates).length === 0) {
             return NextResponse.json({ error: '无更新字段' }, { status: 400 });

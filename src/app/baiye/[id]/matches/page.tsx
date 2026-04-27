@@ -547,6 +547,38 @@ export default function MatchHistoryPage() {
         } catch { /* ignore */ }
     };
 
+    // Toggle dragon capture status: cycles our_team → opponent → null
+    const handleToggleDragon = async (matchId: string, field: 'big_dragon_team' | 'small_dragon_team', currentValue: string | null, teamA: string, teamB: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!canSubmit) return;
+        // Determine our team and opponent
+        const ourTeam = baiye?.name || '';
+        const opponent = teamA === ourTeam ? teamB : teamA;
+        // Cycle: null → ourTeam → opponent → null
+        let nextValue: string | null;
+        if (!currentValue) {
+            nextValue = ourTeam;
+        } else if (currentValue === ourTeam) {
+            nextValue = opponent;
+        } else {
+            nextValue = null;
+        }
+        try {
+            const { data: { session } } = await SupabaseService.getSession();
+            const token = session?.access_token;
+            const res = await fetch(`/api/matches/${matchId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ [field]: nextValue }),
+            });
+            if (!res.ok) return;
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, [field]: nextValue } : m));
+        } catch { /* ignore */ }
+    };
+
     const formatTime = (t?: string) => {
         if (!t) return "—";
         return new Date(t).toLocaleString("zh-CN", {
@@ -704,6 +736,49 @@ export default function MatchHistoryPage() {
 
                                     {/* Winner Badge */}
                                     <div className="shrink-0">{getWinnerBadge(m)}</div>
+
+                                    {/* Dragon Badges */}
+                                    <div className="shrink-0 flex gap-1">
+                                        {(() => {
+                                            const match = m as Match;
+                                            const ourTeam = baiye?.name || '';
+                                            const bigDragon = match.big_dragon_team;
+                                            const smallDragon = match.small_dragon_team;
+                                            const getBadgeStyle = (val: string | null | undefined) => {
+                                                if (!val) return 'text-neutral-600 bg-neutral-800 border-neutral-700 hover:border-neutral-500';
+                                                if (val === ourTeam) return 'text-green-300 bg-green-500/20 border-green-500/40';
+                                                return 'text-red-300 bg-red-500/20 border-red-500/40';
+                                            };
+                                            const getDragonLabel = (type: string, val: string | null | undefined) => {
+                                                if (!val) return `⬜${type}`;
+                                                return `${val === ourTeam ? '✅' : '❌'}${type}`;
+                                            };
+                                            const getDragonTitle = (type: string, val: string | null | undefined) => {
+                                                if (!val) return `${type}: 无人拿到${canSubmit ? ' (点击切换)' : ''}`;
+                                                return `${type}: ${val}拿到${canSubmit ? ' (点击切换)' : ''}`;
+                                            };
+                                            return (
+                                                <>
+                                                    <button
+                                                        onClick={(e) => handleToggleDragon(m.id, 'big_dragon_team', bigDragon || null, m.team_a, m.team_b, e)}
+                                                        disabled={!canSubmit}
+                                                        className={`text-[10px] font-bold px-1.5 py-0.5 border transition-all ${getBadgeStyle(bigDragon)} ${canSubmit ? 'cursor-pointer' : 'cursor-default'}`}
+                                                        title={getDragonTitle('大龙', bigDragon)}
+                                                    >
+                                                        {getDragonLabel('大龙', bigDragon)}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleToggleDragon(m.id, 'small_dragon_team', smallDragon || null, m.team_a, m.team_b, e)}
+                                                        disabled={!canSubmit}
+                                                        className={`text-[10px] font-bold px-1.5 py-0.5 border transition-all ${getBadgeStyle(smallDragon)} ${canSubmit ? 'cursor-pointer' : 'cursor-default'}`}
+                                                        title={getDragonTitle('小龙', smallDragon)}
+                                                    >
+                                                        {getDragonLabel('小龙', smallDragon)}
+                                                    </button>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
 
                                     {/* Submission Status */}
                                     <div className="shrink-0 text-xs w-20 text-right">

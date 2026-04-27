@@ -11,7 +11,12 @@ import { Roster, RosterData, RosterMember, RosterOption, RosterSquad, User, Wall
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const DEFAULT_COLUMNS = [
+const ATTACK_COLUMNS = [
+    "开局规划", "打塔", "打鹅", "树团",
+    "打野", "25分boss规划", "15分boss规划"
+];
+
+const DEFENSE_COLUMNS = [
     "开局规划", "守塔", "守鹅", "守车",
     "铁桶（boss没拿到）", "打野",
     "25分boss规划", "15分boss规划"
@@ -26,7 +31,8 @@ const EMPTY_WALL = (): WallTower[] => [
 ];
 
 const EMPTY_ROSTER_DATA = (): RosterData => ({
-    columns: [...DEFAULT_COLUMNS],
+    columns: [...DEFENSE_COLUMNS],
+    attackColumns: [...ATTACK_COLUMNS],
     attack: [EMPTY_SQUAD(), EMPTY_SQUAD(), EMPTY_SQUAD()],
     defense: [EMPTY_SQUAD(), EMPTY_SQUAD(), EMPTY_SQUAD()],
     wall: EMPTY_WALL(),
@@ -114,7 +120,7 @@ export default function RosterPage() {
 
     /** Load a specific roster (from history panel) */
     const loadRoster = async (roster: Roster) => {
-        const data = normalizeWallData(roster.roster_data || EMPTY_ROSTER_DATA());
+        const data = normalizeRosterData(roster.roster_data || EMPTY_ROSTER_DATA());
         setCurrentRosterId(roster.id);
         setRosterName(roster.name);
         setRosterDate(roster.roster_date || todayStr());
@@ -124,29 +130,83 @@ export default function RosterPage() {
         await buildPoolFromRoster(data);
     };
 
-    /** Normalize old wall format (RosterSquad[]) to new WallTower[] */
-    function normalizeWallData(data: RosterData): RosterData {
-        if (!data.wall || !Array.isArray(data.wall)) {
-            return { ...data, wall: EMPTY_WALL() };
-        }
-        // Check if already new format
-        const first = data.wall[0];
-        if (first && typeof first === "object" && "name" in first && typeof (first as any).name === "string" && Array.isArray((first as any).members)) {
-            // Might be new format — check if members are strings
-            if ((first as any).members.length === 0 || typeof (first as any).members[0] === "string") {
-                return data; // Already new format
+    /** Normalize old wall format (RosterSquad[]) to new WallTower[] + ensure attackColumns */
+    function normalizeRosterData(data: RosterData): RosterData {
+        let result = { ...data };
+
+        // --- Normalize wall ---
+        if (!result.wall || !Array.isArray(result.wall)) {
+            result.wall = EMPTY_WALL();
+        } else {
+            const first = result.wall[0];
+            if (first && typeof first === "object" && "name" in first && typeof (first as any).name === "string" && Array.isArray((first as any).members)) {
+                if ((first as any).members.length === 0 || typeof (first as any).members[0] === "string") {
+                    // Already new format
+                }
+            } else {
+                // Old format: RosterSquad[] → convert
+                const towerNames = ["上塔", "中塔", "下塔"];
+                result.wall = towerNames.map((name, i) => {
+                    const oldSquad = (data.wall as any)[i];
+                    return {
+                        name,
+                        members: oldSquad?.members?.map((m: any) => m.name).filter(Boolean).slice(0, 3) || [],
+                    };
+                });
             }
         }
-        // Old format: RosterSquad[] → convert
-        const towerNames = ["上塔", "中塔", "下塔"];
-        const newWall: WallTower[] = towerNames.map((name, i) => {
-            const oldSquad = (data.wall as any)[i];
-            return {
-                name,
-                members: oldSquad?.members?.map((m: any) => m.name).filter(Boolean).slice(0, 3) || [],
-            };
-        });
-        return { ...data, wall: newWall };
+
+        // --- Ensure attackColumns (backward compat) ---
+        if (!result.attackColumns) {
+            // Find indices to remove (铁桶) from old shared columns
+            const removedIndices: number[] = [];
+            const derivedCols: string[] = [];
+            result.columns.forEach((col, i) => {
+                if (col.includes("铁桶")) {
+                    removedIndices.push(i);
+                } else {
+                    let mapped = col;
+                    if (col === "守塔") mapped = "打塔";
+                    if (col === "守鹅") mapped = "打鹅";
+                    if (col === "守车") mapped = "树团";
+                    derivedCols.push(mapped);
+                }
+            });
+            result.attackColumns = derivedCols;
+
+            // Adjust attack squad member cells to match new column count
+            if (removedIndices.length > 0) {
+                result.attack = result.attack.map((squad) => ({
+                    ...squad,
+                    members: squad.members.map((m) => ({
+                        ...m,
+                        cells: m.cells.filter((_, ci) => !removedIndices.includes(ci)),
+                    })),
+                }));
+            }
+        }
+
+        // Ensure attack member cells match attackColumns length
+        const aCols = result.attackColumns!.length;
+        result.attack = result.attack.map((squad) => ({
+            ...squad,
+            members: squad.members.map((m) => ({
+                ...m,
+                cells: m.cells.length === aCols ? m.cells : Array.from({ length: aCols }, (_, i) => m.cells[i] || { text: "", color: null }),
+            })),
+        }));
+
+        // Ensure defense member cells match defense columns length
+        const dCols = result.columns.length;
+        result.defense = result.defense.map((squad) => ({
+            ...squad,
+            members: squad.members.map((m) => ({
+                ...m,
+                cells: m.cells.length === dCols ? m.cells : Array.from({ length: dCols }, (_, i) => m.cells[i] || { text: "", color: null }),
+            })),
+        }));
+
+        return result;
     }
 
     useEffect(() => {
@@ -164,7 +224,7 @@ export default function RosterPage() {
             setRosters(r);
             if (r.length > 0) {
                 const latest = r[0];
-                const data = normalizeWallData(latest.roster_data || EMPTY_ROSTER_DATA());
+                const data = normalizeRosterData(latest.roster_data || EMPTY_ROSTER_DATA());
                 setCurrentRosterId(latest.id);
                 setRosterName(latest.name);
                 setRosterDate(latest.roster_date || todayStr());
@@ -225,7 +285,8 @@ export default function RosterPage() {
     };
 
     // Table data handlers
-    const handleColumnsChange = (cols: string[]) => { setRosterData((prev) => ({ ...prev, columns: cols })); setHasChanges(true); };
+    const handleAttackColumnsChange = (cols: string[]) => { setRosterData((prev) => ({ ...prev, attackColumns: cols })); setHasChanges(true); };
+    const handleDefenseColumnsChange = (cols: string[]) => { setRosterData((prev) => ({ ...prev, columns: cols })); setHasChanges(true); };
     const handleSquadsChange = (section: "attack" | "defense") => (squads: RosterSquad[]) => {
         setRosterData((prev) => ({ ...prev, [section]: squads }));
         setHasChanges(true);
@@ -251,6 +312,18 @@ export default function RosterPage() {
     const handleNew = () => {
         setCurrentRosterId(null); setRosterName("排表"); setRosterDate(todayStr());
         setRosterData(EMPTY_ROSTER_DATA()); setMembers([]); setHasChanges(false);
+    };
+
+    const handleDeleteRoster = async (rosterId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm("确定要删除这条历史排表吗？")) return;
+        try {
+            await SupabaseService.deleteRoster(rosterId);
+            setRosters((prev) => prev.filter((r) => r.id !== rosterId));
+            if (currentRosterId === rosterId) {
+                handleNew();
+            }
+        } catch { /* ignore */ }
     };
 
     // Export
@@ -326,13 +399,23 @@ export default function RosterPage() {
                                             </button>
                                         )}
                                         {rosters.map((r) => (
-                                            <button key={r.id} onClick={() => loadRoster(r)}
-                                                className={`w-full px-2 py-1.5 text-left text-[11px] border-2 transition-colors ${
-                                                    currentRosterId === r.id ? "border-yellow-500 bg-yellow-500/10 text-yellow-400" : "border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500"
-                                                }`}>
-                                                <div className="font-bold">{r.roster_date}</div>
-                                                <div className="text-[9px] text-neutral-500">{r.name}</div>
-                                            </button>
+                                            <div key={r.id} className="group relative">
+                                                <button onClick={() => loadRoster(r)}
+                                                    className={`w-full px-2 py-1.5 text-left text-[11px] border-2 transition-colors ${
+                                                        currentRosterId === r.id ? "border-yellow-500 bg-yellow-500/10 text-yellow-400" : "border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500"
+                                                    }`}>
+                                                    <div className="font-bold">{r.roster_date}</div>
+                                                    <div className="text-[9px] text-neutral-500">{r.name}</div>
+                                                </button>
+                                                {isAdmin && (
+                                                    <button
+                                                        onClick={(e) => handleDeleteRoster(r.id, e)}
+                                                        className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-[10px] text-neutral-600 hover:text-red-400 hover:bg-red-400/10 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                                        title="删除此排表">
+                                                        ✕
+                                                    </button>
+                                                )}
+                                            </div>
                                         ))}
                                         {rosters.length === 0 && <div className="text-[10px] text-neutral-600 text-center py-2">暂无</div>}
                                     </div>
@@ -374,14 +457,14 @@ export default function RosterPage() {
                         </div>
                         <div className="overflow-x-auto">
                             <div style={{ display: activeTab === "attack" ? "block" : "none" }}>
-                                <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.columns} squads={rosterData.attack}
+                                <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.attackColumns || rosterData.columns} squads={rosterData.attack}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleColumnsChange} onSquadsChange={handleSquadsChange("attack")} headerColor="#fdd" />
+                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} headerColor="#fdd" />
                             </div>
                             <div style={{ display: activeTab === "defense" ? "block" : "none" }}>
                                 <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleColumnsChange} onSquadsChange={handleSquadsChange("defense")} headerColor="#ddf" />
+                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} headerColor="#ddf" />
                             </div>
                             <div style={{ display: activeTab === "wall" ? "block" : "none" }}>
                                 <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}

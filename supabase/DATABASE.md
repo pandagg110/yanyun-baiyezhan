@@ -62,6 +62,14 @@
   │ baiyezhan_feedback   │   │ baiyezhan_todos      │
   │ (玩家反馈)             │   │ (优化计划ToDo)        │
   └──────────────────────┘   └──────────────────────┘
+
+       ┌───────── match_id + baiye_id ─────────┐
+       │                                       │
+       ▼                                       │
+  ┌─────────────────────────────┐               │
+  │ baiyezhan_match_ai_analysis │               │
+  │ (AI战术分析缓存)              │               │
+  └─────────────────────────────┘               │
 ```
 
 ---
@@ -193,6 +201,8 @@
 | `match_start_time` | `timestamptz` | — | `NULL` | 对战开始时间 |
 | `match_date` | `timestamptz` | — | `now()` | 对战日期（触发器自动同步为 `match_start_time`） |
 | `notes` | `text` | — | `NULL` | 备注 |
+| `big_dragon_team` | `text` | — | `NULL` | 拿到大龙的百业名称，NULL 表示无人拿到 |
+| `small_dragon_team` | `text` | — | `NULL` | 拿到小龙的百业名称，NULL 表示无人拿到 |
 | `screenshot_urls` | `text[]` | — | `NULL` | 原始截图 URL 数组 |
 | `created_by` | `uuid` | FK → `baiyezhan_users(id)` ON DELETE SET NULL | `NULL` | 上传者 ID |
 | `created_at` | `timestamptz` | NOT NULL | `now()` | 录入时间 |
@@ -332,6 +342,35 @@
 
 ---
 
+### 12. `baiyezhan_match_ai_analysis` — AI 战术分析缓存表
+
+> 存储每场对战的 AI 生成战术分析结果。使用 UNIQUE(match_id, baiye_id) 约束，支持 upsert 重新生成。
+
+| 列名 | 类型 | 约束 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `id` | `uuid` | **PK** | `gen_random_uuid()` | 记录唯一 ID |
+| `match_id` | `uuid` | NOT NULL | — | 对战 ID |
+| `baiye_id` | `uuid` | NOT NULL, FK → `baiyezhan_baiye(id)` ON DELETE CASCADE | — | 所属百业 |
+| `analysis_text` | `text` | NOT NULL | — | AI 生成的战术分析文本 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 首次生成时间 |
+| `updated_at` | `timestamptz` | NOT NULL | `now()` | 最后更新时间（重新生成时更新） |
+
+**唯一约束**: `UNIQUE(match_id, baiye_id)` — 每场对战每个百业只存储一条分析
+
+**索引**:
+- `idx_match_ai_analysis_match` — 按对战 ID 查询
+- `idx_match_ai_analysis_baiye` — 按百业 ID 查询
+
+**触发器**:
+- `trg_match_ai_analysis_updated_at` — UPDATE 时自动更新 `updated_at` 字段
+
+**设计说明**:
+- 展开对战详情时自动检查是否已有保存的分析，有则直接回显
+- 用户点击「重新生成」时通过 upsert 覆盖旧分析
+- RLS 开放读写（与 todos 表一致），权限控制在应用层
+
+---
+
 ## 🔐 行级安全策略 (RLS)
 
 
@@ -359,6 +398,9 @@
 | `baiyezhan_todos` | Authenticated insert todos | INSERT | 认证用户可创建（API 层面限 admin） |
 | `baiyezhan_todos` | Authenticated update todos | UPDATE | 认证用户可更新（API 层面限 admin） |
 | `baiyezhan_todos` | Authenticated delete todos | DELETE | 认证用户可删除（API 层面限 admin） |
+| `baiyezhan_match_ai_analysis` | Public read match ai analysis | SELECT | 所有人可读 AI 分析 |
+| `baiyezhan_match_ai_analysis` | Public insert match ai analysis | INSERT | 任何人可创建分析（API 层面限触发） |
+| `baiyezhan_match_ai_analysis` | Public update match ai analysis | UPDATE | 任何人可更新分析（支持重新生成） |
 | `storage.objects` | Allow authenticated uploads to baiyezhan | INSERT | 认证用户可上传到 `baiyezhan` 桶 |
 | `storage.objects` | Public read access to baiyezhan | SELECT | 公开读取 `baiyezhan` 桶 |
 
@@ -442,6 +484,7 @@ baiyezhan_baiye.id      ──→ baiyezhan_feedback.baiye_id       (CASCADE)
 baiyezhan_users.id      ──→ baiyezhan_feedback.user_id        (SET NULL)
 baiyezhan_baiye.id      ──→ baiyezhan_todos.baiye_id          (CASCADE)
 baiyezhan_users.id      ──→ baiyezhan_todos.created_by        (SET NULL)
+baiyezhan_baiye.id      ──→ baiyezhan_match_ai_analysis.baiye_id (CASCADE)
 ```
 
 ---
@@ -464,6 +507,7 @@ baiyezhan_users.id      ──→ baiyezhan_todos.created_by        (SET NULL)
 | 11 | `011_add_match_times.sql` | 2026-04-11 | 为 matches 表添加 start/end time，触发器自动同步 match_date |
 | 12 | `012_redesign_matches.sql` | 2026-04-11 | 对称重设计：team_a/team_b/match_key 去重，winner 替代 result |
 | 15 | `015_add_feedback_and_todos.sql` | 2026-04-28 | 新增玩家反馈表和优化计划ToDo表，构建反馈闭环系统 |
+| 20 | `020_add_match_ai_analysis.sql` | 2026-04-28 | 新增 AI 战术分析缓存表，支持保存和重新生成 |
 
 ---
 

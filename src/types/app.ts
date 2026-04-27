@@ -88,6 +88,8 @@ export interface Match {
     match_date?: string;        // auto-synced from match_start_time
     match_type?: string;        // 约战 | 正赛 | 排位 (default)
     coin_value?: number;         // 逗币基数，默认720
+    big_dragon_team?: string | null;    // 拿到大龙的百业名称
+    small_dragon_team?: string | null;  // 拿到小龙的百业名称
     notes?: string;
     roster_id?: string;             // 关联排表 ID
     screenshot_urls?: string[];
@@ -226,7 +228,8 @@ export interface WallTower {
 
 /** 排表数据（JSONB 结构） — 行=成员，列=阶段，格=战术指令 */
 export interface RosterData {
-    columns: string[];
+    columns: string[];              // 防守列 (backward compat)
+    attackColumns?: string[];       // 进攻列 (新增，独立于防守)
     attack: RosterSquad[];
     defense: RosterSquad[];
     wall: WallTower[];

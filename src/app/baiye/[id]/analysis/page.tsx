@@ -438,8 +438,8 @@ export default function AnalysisPage() {
     const [aiAnalysisCache, setAiAnalysisCache] = useState<Map<string, string>>(new Map());
     const [aiAnalysisLoading, setAiAnalysisLoading] = useState<string | null>(null);
 
-    const fetchAiAnalysis = useCallback(async (matchId: string) => {
-        if (aiAnalysisCache.has(matchId)) return;
+    const fetchAiAnalysis = useCallback(async (matchId: string, regenerate = false) => {
+        if (!regenerate && aiAnalysisCache.has(matchId)) return;
         const detail = matchDetailCache.get(matchId);
         if (!detail || detail.loading || detail.stats.length === 0) return;
 
@@ -478,6 +478,8 @@ export default function AnalysisPage() {
                     ourTeamStats,
                     opponentStats,
                     rosterSummary,
+                    baiyeId,
+                    regenerate,
                 }),
             });
             const data = await res.json();
@@ -504,7 +506,7 @@ export default function AnalysisPage() {
         } finally {
             setAiAnalysisLoading(null);
         }
-    }, [aiAnalysisCache, matchDetailCache, baiye?.name]);
+    }, [aiAnalysisCache, matchDetailCache, baiye?.name, baiyeId]);
 
     // ── Sort states ──
     type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kd' | 'total_kills' | 'total_assists' | 'total_deaths';
@@ -785,6 +787,17 @@ export default function AnalysisPage() {
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [expandedMatchId]);
+
+    // Auto-load saved AI analysis when match detail finishes loading
+    useEffect(() => {
+        if (expandedMatchId) {
+            const detail = matchDetailCache.get(expandedMatchId);
+            if (detail && !detail.loading && detail.stats.length > 0 && !aiAnalysisCache.has(expandedMatchId) && aiAnalysisLoading !== expandedMatchId) {
+                fetchAiAnalysis(expandedMatchId);
+            }
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [expandedMatchId, matchDetailCache]);
 
     // ── Chart rendering (SVG) — with comparison support ──
     const renderChart = () => {
@@ -1747,14 +1760,25 @@ export default function AnalysisPage() {
                                                                 <div className="border border-neutral-700 bg-neutral-950/60 h-full">
                                                                     <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700">
                                                                         <span className="text-xs font-bold text-purple-400 uppercase">🤖 AI 战术分析</span>
-                                                                        {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
-                                                                            <button
-                                                                                onClick={() => fetchAiAnalysis(ms.match_id)}
-                                                                                className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
-                                                                            >
-                                                                                分析此战
-                                                                            </button>
-                                                                        )}
+                                                                        <div className="flex items-center gap-1">
+                                                                            {aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                                <button
+                                                                                    onClick={() => fetchAiAnalysis(ms.match_id, true)}
+                                                                                    className="text-[10px] px-2 py-0.5 border border-neutral-600 text-neutral-400 bg-neutral-800 hover:border-purple-500/40 hover:text-purple-400 hover:bg-purple-500/10 transition-colors font-bold"
+                                                                                    title="重新生成AI分析"
+                                                                                >
+                                                                                    🔄 重新生成
+                                                                                </button>
+                                                                            )}
+                                                                            {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                                <button
+                                                                                    onClick={() => fetchAiAnalysis(ms.match_id)}
+                                                                                    className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
+                                                                                >
+                                                                                    分析此战
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                     <div className="p-3 text-xs leading-relaxed">
                                                                         {aiAnalysisLoading === ms.match_id ? (
