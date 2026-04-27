@@ -241,24 +241,28 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Aggregate query: group by (match_id, team_name) so the DB returns at most
-        // 2 rows per match (one per team) with a player count — never touches the
-        // 1000-row default limit no matter how many players are in each match.
+        // Fetch only match_id and team_name for all stats (2 columns, ~50 bytes/row).
+        // We need the count per match AND which teams submitted — both derivable from
+        // this minimal query. Using limit(10000) to safely exceed Supabase's 1000-row
+        // default cap. At ~50 bytes/row this is well under 1 MB even for 10k rows.
+        // Note: Supabase JS client does not support count() aggregate in .select(),
+        // so we count in JS from the lightweight match_id+team_name rows.
         const matchIds = (matches || []).map(m => m.id);
-        const { data: statsAgg } = matchIds.length > 0
+        const { data: allStats } = matchIds.length > 0
             ? await supabase
                 .from('baiyezhan_match_stats')
-                .select('match_id, team_name, count()')
+                .select('match_id, team_name')
                 .in('match_id', matchIds)
+                .limit(10000)
             : { data: [] };
 
-        // Build lookup maps from the aggregated rows
+        // Build lookup maps from the lightweight rows
         const statsMap = new Map<string, Set<string>>();
         const countMap = new Map<string, number>();
-        for (const s of (statsAgg || []) as { match_id: string; team_name: string; count: number }[]) {
+        for (const s of (allStats || [])) {
             if (!statsMap.has(s.match_id)) statsMap.set(s.match_id, new Set());
             statsMap.get(s.match_id)!.add(s.team_name);
-            countMap.set(s.match_id, (countMap.get(s.match_id) || 0) + Number(s.count));
+            countMap.set(s.match_id, (countMap.get(s.match_id) || 0) + 1);
         }
 
         const matchesWithInfo = (matches || []).map(m => ({
