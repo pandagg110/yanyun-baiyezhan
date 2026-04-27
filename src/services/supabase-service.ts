@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Baiye, GuestbookMessage, Room, RoomData, RoomMember, RoomState, User, UserRole } from "@/types/app";
+import { Baiye, Feedback, GuestbookMessage, Room, RoomData, RoomMember, RoomState, Todo, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -754,6 +754,162 @@ export const SupabaseService = {
             .from('baiyezhan_guestbook')
             .delete()
             .eq('id', messageId);
+
+        if (error) throw error;
+    },
+
+    // ============ FEEDBACK METHODS (反馈系统) ============
+
+    /**
+     * Submit player feedback
+     */
+    submitFeedback: async (
+        baiyeId: string,
+        data: {
+            worst_experience: string;
+            improvement_suggestion: string;
+            good_parts?: string;
+            player_role?: string;
+            is_anonymous: boolean;
+        },
+        userId?: string,
+        userName?: string
+    ): Promise<Feedback> => {
+        const insertPayload: any = {
+            baiye_id: baiyeId,
+            worst_experience: data.worst_experience,
+            improvement_suggestion: data.improvement_suggestion,
+            good_parts: data.good_parts || null,
+            player_role: data.player_role || null,
+            is_anonymous: data.is_anonymous,
+            user_id: data.is_anonymous ? null : (userId || null),
+            user_name: data.is_anonymous ? null : (userName || null),
+        };
+
+        const { data: feedback, error } = await supabase
+            .from('baiyezhan_feedback')
+            .insert(insertPayload)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return feedback as Feedback;
+    },
+
+    /**
+     * Get feedbacks by baiye ID with optional time range filter
+     */
+    getFeedbacksByBaiye: async (
+        baiyeId: string,
+        options?: { startTime?: string; endTime?: string; limit?: number }
+    ): Promise<Feedback[]> => {
+        let query = supabase
+            .from('baiyezhan_feedback')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('created_at', { ascending: false });
+
+        if (options?.startTime) {
+            query = query.gte('created_at', options.startTime);
+        }
+        if (options?.endTime) {
+            query = query.lte('created_at', options.endTime);
+        }
+        if (options?.limit) {
+            query = query.limit(options.limit);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data as Feedback[]) || [];
+    },
+
+    // ============ TODO METHODS (ToDo系统) ============
+
+    /**
+     * Get todos by baiye ID
+     */
+    getTodosByBaiye: async (baiyeId: string): Promise<Todo[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_todos')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data as Todo[]) || [];
+    },
+
+    /**
+     * Create a todo item
+     */
+    createTodo: async (todo: {
+        baiye_id: string;
+        title: string;
+        description?: string;
+        priority: string;
+        status?: string;
+        batch_time_start?: string;
+        batch_time_end?: string;
+        created_by?: string;
+    }): Promise<Todo> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_todos')
+            .insert({
+                baiye_id: todo.baiye_id,
+                title: todo.title,
+                description: todo.description || null,
+                priority: todo.priority,
+                status: todo.status || 'todo',
+                batch_time_start: todo.batch_time_start || null,
+                batch_time_end: todo.batch_time_end || null,
+                created_by: todo.created_by || null,
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as Todo;
+    },
+
+    /**
+     * Update todo status
+     */
+    updateTodoStatus: async (todoId: string, status: 'todo' | 'doing' | 'done'): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_todos')
+            .update({ status })
+            .eq('id', todoId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Update todo content
+     */
+    updateTodo: async (todoId: string, updates: { title?: string; description?: string; priority?: string; status?: string }): Promise<void> => {
+        const updatePayload: any = {};
+        if (updates.title !== undefined) updatePayload.title = updates.title;
+        if (updates.description !== undefined) updatePayload.description = updates.description;
+        if (updates.priority !== undefined) updatePayload.priority = updates.priority;
+        if (updates.status !== undefined) updatePayload.status = updates.status;
+
+        const { error } = await supabase
+            .from('baiyezhan_todos')
+            .update(updatePayload)
+            .eq('id', todoId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Delete a todo item
+     */
+    deleteTodo: async (todoId: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_todos')
+            .delete()
+            .eq('id', todoId);
 
         if (error) throw error;
     }

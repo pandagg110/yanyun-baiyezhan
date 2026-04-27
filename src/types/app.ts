@@ -141,3 +141,36 @@ export interface MatchScreenshot {
     uploaded_by?: string;
     created_at: string;
 }
+
+// ──────────────────────────────────────
+// Feedback & ToDo System (反馈闭环系统)
+// ──────────────────────────────────────
+
+/** 玩家反馈 */
+export interface Feedback {
+    id: string;
+    baiye_id: string;
+    worst_experience?: string;
+    improvement_suggestion: string;
+    good_parts?: string;
+    player_role?: '防守' | '进攻';
+    is_anonymous: boolean;
+    user_id?: string;
+    user_name?: string;
+    created_at: string;
+}
+
+/** ToDo 优化计划 */
+export interface Todo {
+    id: string;
+    baiye_id: string;
+    title: string;
+    description?: string;
+    priority: 'high' | 'medium' | 'low';
+    status: 'todo' | 'doing' | 'done';
+    batch_time_start?: string;
+    batch_time_end?: string;
+    created_by?: string;
+    created_at: string;
+    updated_at?: string;
+}
