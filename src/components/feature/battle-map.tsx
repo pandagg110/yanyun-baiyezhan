@@ -53,6 +53,15 @@ interface BattleMapProps {
     stats?: MatchStat[];           // for coin_ratio overlay
     coinValue?: number;
     baiyeName?: string;
+    // New: match-level data for info panel
+    matchInfo?: {
+        team_a: string;
+        team_b: string;
+        winner?: string | null;
+        big_dragon_team?: string | null;
+        small_dragon_team?: string | null;
+    } | null;
+    allStats?: MatchStat[];  // both teams' stats for computing team comparison
 }
 
 /**
@@ -110,13 +119,45 @@ function extractJungleAssignments(
     }));
 }
 
-export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName }: BattleMapProps) {
+/** Compute team comparison stats from both teams' stats */
+function computeTeamComparison(allStats: MatchStat[], baiyeName: string, matchInfo?: BattleMapProps['matchInfo']) {
+    const ourName = baiyeName;
+    const ourStats = allStats.filter(s => s.team_name === ourName);
+    const oppStats = allStats.filter(s => s.team_name !== ourName);
+
+    const ourKills = ourStats.reduce((sum, s) => sum + (s.kills || 0), 0);
+    const oppKills = oppStats.reduce((sum, s) => sum + (s.kills || 0), 0);
+    const ourCoins = ourStats.reduce((sum, s) => sum + (s.coins || 0), 0);
+    const oppCoins = oppStats.reduce((sum, s) => sum + (s.coins || 0), 0);
+    const ourHealing = ourStats.reduce((sum, s) => sum + (s.healing || 0), 0);
+    const oppHealing = oppStats.reduce((sum, s) => sum + (s.healing || 0), 0);
+    const ourAvgHealing = ourStats.length > 0 ? ourHealing / ourStats.length : 0;
+    const oppAvgHealing = oppStats.length > 0 ? oppHealing / oppStats.length : 0;
+
+    return { ourKills, oppKills, ourCoins, oppCoins, ourAvgHealing, oppAvgHealing };
+}
+
+export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName, matchInfo, allStats }: BattleMapProps) {
     const jungleData = useMemo(() => {
         if (!rosterData) return JUNGLE_SPOTS.map(spot => ({ spot, assignments: [] as JungleAssignment[] }));
         return extractJungleAssignments(rosterData, stats, coinValue);
     }, [rosterData, stats, coinValue]);
 
     const hasAnyAssignment = jungleData.some(j => j.assignments.length > 0);
+
+    const comparison = useMemo(() => {
+        if (!allStats || allStats.length === 0 || !baiyeName) return null;
+        return computeTeamComparison(allStats, baiyeName, matchInfo);
+    }, [allStats, baiyeName, matchInfo]);
+
+    // Dragon status helpers
+    const bigDragonTeam = matchInfo?.big_dragon_team;
+    const smallDragonTeam = matchInfo?.small_dragon_team;
+    const getDragonLabel = (team: string | null | undefined) => {
+        if (!team) return null;
+        if (team === baiyeName) return { label: '我方', color: '#22c55e', bg: '#14532d' };
+        return { label: '敌方', color: '#ef4444', bg: '#7f1d1d' };
+    };
 
     // Tower positions
     const towers = [
@@ -130,6 +171,9 @@ export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName }
         { x: MAP_W - BASE_W - 60, y: LANE_Y_BOT, side: "offense" as const },
     ];
 
+    // Format number helper
+    const fmtNum = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + 'w' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n).toString();
+
     return (
         <div className="w-full">
             <div className="flex items-center gap-2 mb-2">
@@ -138,6 +182,74 @@ export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName }
                     <span className="text-[10px] text-neutral-600">(无排表打野数据)</span>
                 )}
             </div>
+
+            {/* ── Info Panel: Dragons + Team Comparison ── */}
+            {(comparison || bigDragonTeam || smallDragonTeam) && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                    {/* Dragon Status */}
+                    {(bigDragonTeam !== undefined || smallDragonTeam !== undefined) && (
+                        <div className="flex gap-1.5">
+                            {/* Big Dragon */}
+                            {(() => {
+                                const d = getDragonLabel(bigDragonTeam);
+                                return (
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${
+                                        d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
+                                    }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
+                                        <span>🐉</span>
+                                        <span>大龙</span>
+                                        <span className="text-[10px] opacity-80">{d ? d.label : '—'}</span>
+                                    </div>
+                                );
+                            })()}
+                            {/* Small Dragon */}
+                            {(() => {
+                                const d = getDragonLabel(smallDragonTeam);
+                                return (
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${
+                                        d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
+                                    }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
+                                        <span>🦎</span>
+                                        <span>小龙</span>
+                                        <span className="text-[10px] opacity-80">{d ? d.label : '—'}</span>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    )}
+
+                    {/* Team Comparison Stats */}
+                    {comparison && (
+                        <div className="flex gap-1.5 flex-wrap">
+                            {/* Kill Ratio */}
+                            <div className="flex items-center gap-1. px-2 py-1 border border-neutral-700 bg-neutral-900/80 text-xs">
+                                <span className="text-neutral-500">⚔</span>
+                                <span className="text-cyan-400 font-bold">{comparison.ourKills}</span>
+                                <span className="text-neutral-600">:</span>
+                                <span className="text-red-400 font-bold">{comparison.oppKills}</span>
+                                <span className="text-neutral-600 text-[10px] ml-0.5">人头</span>
+                            </div>
+                            {/* Economy Ratio */}
+                            <div className="flex items-center gap-1 px-2 py-1 border border-neutral-700 bg-neutral-900/80 text-xs">
+                                <span className="text-neutral-500">🪙</span>
+                                <span className="text-yellow-400 font-bold">{fmtNum(comparison.ourCoins)}</span>
+                                <span className="text-neutral-600">:</span>
+                                <span className="text-red-400 font-bold">{fmtNum(comparison.oppCoins)}</span>
+                                <span className="text-neutral-600 text-[10px] ml-0.5">经济</span>
+                            </div>
+                            {/* Avg Healing Ratio */}
+                            <div className="flex items-center gap-1 px-2 py-1 border border-neutral-700 bg-neutral-900/80 text-xs">
+                                <span className="text-neutral-500">💊</span>
+                                <span className="text-emerald-400 font-bold">{fmtNum(comparison.ourAvgHealing)}</span>
+                                <span className="text-neutral-600">:</span>
+                                <span className="text-red-400 font-bold">{fmtNum(comparison.oppAvgHealing)}</span>
+                                <span className="text-neutral-600 text-[10px] ml-0.5">均治疗</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="bg-neutral-950/80 border border-neutral-700 p-2 overflow-x-auto">
                 <svg
                     viewBox={`0 0 ${MAP_W} ${MAP_H}`}
@@ -357,3 +469,4 @@ export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName }
         </div>
     );
 }
+

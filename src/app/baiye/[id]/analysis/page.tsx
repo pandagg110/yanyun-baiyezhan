@@ -101,6 +101,8 @@ interface MatchDetailCache {
         match_type: string;
         match_start_time: string;
         coin_value: number;
+        big_dragon_team?: string | null;
+        small_dragon_team?: string | null;
     };
     stats: MatchStat[];
     roster?: { id: string; roster_date: string; roster_data: RosterData } | null;
@@ -167,7 +169,7 @@ function AnalysisTimeline({ matches, baiyeName, onSelect, activeId }: {
     const sorted = useMemo(() =>
         [...matches]
             .filter(m => m.match_start_time)
-            .sort((a, b) => new Date(a.match_start_time!).getTime() - new Date(b.match_start_time!).getTime()),
+            .sort((a, b) => new Date(b.match_start_time!).getTime() - new Date(a.match_start_time!).getTime()),
         [matches]
     );
 
@@ -433,6 +435,7 @@ export default function AnalysisPage() {
 
     // Expanded match in per-match section
     const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+    const matchDetailRef = useRef<HTMLDivElement>(null);
 
     // ── AI match analysis cache ──
     const [aiAnalysisCache, setAiAnalysisCache] = useState<Map<string, string>>(new Map());
@@ -480,6 +483,10 @@ export default function AnalysisPage() {
                     rosterSummary,
                     baiyeId,
                     regenerate,
+                    dragonInfo: {
+                        big_dragon_team: detail.match?.big_dragon_team || null,
+                        small_dragon_team: detail.match?.small_dragon_team || null,
+                    },
                 }),
             });
             const data = await res.json();
@@ -788,16 +795,7 @@ export default function AnalysisPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [expandedMatchId]);
 
-    // Auto-load saved AI analysis when match detail finishes loading
-    useEffect(() => {
-        if (expandedMatchId) {
-            const detail = matchDetailCache.get(expandedMatchId);
-            if (detail && !detail.loading && detail.stats.length > 0 && !aiAnalysisCache.has(expandedMatchId) && aiAnalysisLoading !== expandedMatchId) {
-                fetchAiAnalysis(expandedMatchId);
-            }
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [expandedMatchId, matchDetailCache]);
+    // NOTE: AI analysis is manual-only. User must click "分析此战" to trigger.
 
     // ── Chart rendering (SVG) — with comparison support ──
     const renderChart = () => {
@@ -1061,36 +1059,154 @@ export default function AnalysisPage() {
                         matches={matchSummaries.map(ms => ({ id: ms.match_id, team_a: ms.team_a, team_b: ms.team_b, winner: ms.winner, match_type: ms.match_type, match_start_time: ms.match_start_time }))}
                         baiyeName={baiye.name}
                         onSelect={(id) => {
-                            setViewTab('matches');
-                            setExpandedMatchId(expandedMatchId === id ? null : id);
+                            const newId = expandedMatchId === id ? null : id;
+                            setExpandedMatchId(newId);
+                            if (newId) {
+                                setTimeout(() => {
+                                    matchDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 100);
+                            }
                         }}
                         activeId={expandedMatchId}
                     />
                 )}
 
-                {/* ═══ View Tab Switcher ═══ */}
-                {!fetching && matchSummaries.length > 0 && (
-                    <div className="flex border-2 border-neutral-700 overflow-hidden">
-                        {[
-                            { key: 'players' as const, label: '🏆 玩家综合数据', count: playerAggs.length },
-                            { key: 'matches' as const, label: '📋 逐场分析', count: matchSummaries.length },
-                        ].map(tab => (
-                            <button
-                                key={tab.key}
-                                onClick={() => setViewTab(tab.key)}
-                                className={`flex-1 py-2.5 text-xs font-bold transition-all ${viewTab === tab.key
-                                        ? 'bg-yellow-500 text-black'
-                                        : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
-                                    }`}
-                            >
-                                {tab.label} ({tab.count})
-                            </button>
-                        ))}
-                    </div>
-                )}
+                {/* ═══ Expanded Match Detail (from timeline selection) ═══ */}
+                {expandedMatchId && (() => {
+                    const ms = matchSummaries.find(m => m.match_id === expandedMatchId);
+                    if (!ms) return null;
+                    const detail = matchDetailCache.get(ms.match_id);
+                    const typeBadge = ms.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
+                        ms.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
+                            "text-green-400 border-green-500/30 bg-green-500/10";
+                    return (
+                        <div ref={matchDetailRef} className="border-2 border-yellow-500/30 bg-neutral-900/80" style={{ scrollMarginTop: '1rem' }}>
+                            {/* Match header */}
+                            <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-700 bg-neutral-800/60">
+                                <span className={`px-1.5 py-0.5 text-[10px] font-bold border shrink-0 ${typeBadge}`}>
+                                    {ms.match_type || '排位'}
+                                </span>
+                                <span className="text-white text-xs font-bold">
+                                    {ms.team_a} <span className="text-neutral-600">vs</span> {ms.team_b}
+                                </span>
+                                <span className="text-[11px] text-neutral-400 shrink-0">
+                                    {formatTime(ms.match_start_time)}
+                                </span>
+                                {ms.winner && ms.winner !== 'draw' && (
+                                    <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
+                                        🏆 {ms.winner}
+                                    </span>
+                                )}
+                                <div className="flex-1" />
+                                <button
+                                    onClick={() => setExpandedMatchId(null)}
+                                    className="text-neutral-500 hover:text-white transition-colors text-xs px-2 py-1"
+                                >
+                                    ✕ 关闭
+                                </button>
+                            </div>
+
+                            {/* Detail body */}
+                            <div className="px-4 py-3 space-y-4">
+                                {detail?.loading ? (
+                                    <div className="flex items-center gap-2 text-xs text-neutral-500 py-4 justify-center">
+                                        <div className="w-3 h-3 border border-neutral-500 border-t-transparent animate-spin" />
+                                        加载对局详情...
+                                    </div>
+                                ) : detail?.stats && detail.stats.length > 0 ? (
+                                    <>
+                                        {/* ── Battle Map (always show with match info, roster is optional) ── */}
+                                        <BattleMap
+                                            rosterData={detail.roster?.roster_data}
+                                            stats={detail.stats.filter(s => s.team_name === (baiye?.name || ms.team_a))}
+                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
+                                            baiyeName={baiye?.name}
+                                            matchInfo={detail.match ? {
+                                                team_a: detail.match.team_a || ms.team_a,
+                                                team_b: detail.match.team_b || ms.team_b,
+                                                winner: detail.match.winner || ms.winner,
+                                                big_dragon_team: detail.match.big_dragon_team,
+                                                small_dragon_team: detail.match.small_dragon_team,
+                                            } : null}
+                                            allStats={detail.stats}
+                                        />
+
+                                        {/* ── Data tables + AI analysis side by side ── */}
+                                        <div className="flex flex-col lg:flex-row gap-4">
+                                            {/* Left: Detail Tables */}
+                                            <div className="flex-1 min-w-0 space-y-4">
+                                                {[ms.team_a, ms.team_b].map(teamName => {
+                                                    const tStats = detail.stats.filter(s => s.team_name === teamName);
+                                                    if (tStats.length === 0) return null;
+                                                    return (
+                                                        <DetailTable
+                                                            key={teamName}
+                                                            teamName={teamName}
+                                                            stats={tStats}
+                                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
+                                                            sort={detailSort}
+                                                            onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
+                                                            formatNum={formatNum}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Right: AI Analysis */}
+                                            <div className="lg:w-72 shrink-0">
+                                                <div className="border border-neutral-700 bg-neutral-950/60 h-full">
+                                                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700">
+                                                        <span className="text-xs font-bold text-purple-400 uppercase">🤖 AI 战术分析</span>
+                                                        <div className="flex items-center gap-1">
+                                                            {aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                <button
+                                                                    onClick={() => fetchAiAnalysis(ms.match_id, true)}
+                                                                    className="text-[10px] px-2 py-0.5 border border-neutral-600 text-neutral-400 bg-neutral-800 hover:border-purple-500/40 hover:text-purple-400 hover:bg-purple-500/10 transition-colors font-bold"
+                                                                    title="重新生成AI分析"
+                                                                >
+                                                                    🔄 重新生成
+                                                                </button>
+                                                            )}
+                                                            {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                <button
+                                                                    onClick={() => fetchAiAnalysis(ms.match_id)}
+                                                                    className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
+                                                                >
+                                                                    分析此战
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 text-xs leading-relaxed">
+                                                        {aiAnalysisLoading === ms.match_id ? (
+                                                            <div className="flex flex-col items-center gap-2 py-6 text-neutral-500">
+                                                                <div className="w-4 h-4 border-2 border-purple-500/40 border-t-purple-400 animate-spin rounded-full" />
+                                                                <span>AI 分析中...</span>
+                                                            </div>
+                                                        ) : aiAnalysisCache.has(ms.match_id) ? (
+                                                            <div className="text-neutral-300 whitespace-pre-wrap">
+                                                                {aiAnalysisCache.get(ms.match_id)}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-neutral-600 text-center py-6">
+                                                                点击「分析此战」获取 AI 战术洞察
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-xs text-neutral-600 text-center py-4">暂无详细数据</div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* ═══ Player Summary Table ═══ */}
-                {!fetching && viewTab === 'players' && sortedPlayerAggs.length > 0 && (
+                {!fetching && sortedPlayerAggs.length > 0 && (
                     <PixelCard className="bg-neutral-800 space-y-3">
                         <h3 className="text-sm font-bold text-yellow-500 uppercase border-b-2 border-yellow-500/20 pb-2">
                             🏆 玩家综合数据
@@ -1639,178 +1755,7 @@ export default function AnalysisPage() {
                     </div>
                 )}
 
-                {/* ═══ Per-Match Breakdown ═══ */}
-                {!fetching && viewTab === 'matches' && matchSummaries.length > 0 && (
-                    <PixelCard className="bg-neutral-800 space-y-3">
-                        <h3 className="text-sm font-bold text-yellow-500 uppercase border-b-2 border-yellow-500/20 pb-2">
-                            📋 逐场分析 ({matchSummaries.length} 场)
-                        </h3>
 
-                        <div className="space-y-1">
-                            {[...matchSummaries].sort((a, b) => new Date(b.match_start_time).getTime() - new Date(a.match_start_time).getTime()).map((ms) => {
-                                const isExpanded = expandedMatchId === ms.match_id;
-                                const typeBadge = ms.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
-                                    ms.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
-                                        "text-green-400 border-green-500/30 bg-green-500/10";
-                                const detail = matchDetailCache.get(ms.match_id);
-
-                                return (
-                                    <div key={ms.match_id} className="border border-neutral-700 overflow-hidden">
-                                        {/* Match row header */}
-                                        <button
-                                            onClick={() => setExpandedMatchId(isExpanded ? null : ms.match_id)}
-                                            className="w-full flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 text-left hover:bg-white/5 transition-colors"
-                                        >
-                                            <span className="text-neutral-600 text-xs shrink-0">{isExpanded ? '▼' : '▶'}</span>
-
-                                            {/* Mobile layout: stacked */}
-                                            <div className="flex-1 min-w-0 md:contents">
-                                                {/* Time + type badge — stacked on mobile, inline on desktop */}
-                                                <div className="flex items-center gap-2 mb-1 md:mb-0 md:contents">
-                                                    <span className="text-[11px] text-neutral-400 shrink-0 md:w-24">
-                                                        {formatTime(ms.match_start_time)}
-                                                    </span>
-                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold border shrink-0 ${typeBadge}`}>
-                                                        {ms.match_type || '排位'}
-                                                    </span>
-                                                </div>
-                                                {/* Teams */}
-                                                <div className="flex items-center gap-2 justify-between md:contents">
-                                                    <span className="text-white text-xs font-bold min-w-0 truncate md:flex-1">
-                                                        {ms.team_a} <span className="text-neutral-600">vs</span> {ms.team_b}
-                                                    </span>
-                                                    {/* Mobile: winner + stats combined */}
-                                                    <div className="flex items-center gap-2 shrink-0 md:hidden">
-                                                        {ms.winner && ms.winner !== 'draw' && (
-                                                            <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5">
-                                                                🏆 {ms.winner.length > 4 ? ms.winner.slice(0, 4) + '..' : ms.winner}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-neutral-500 text-[11px]">{ms.player_count}人</span>
-                                                    </div>
-                                                </div>
-                                                {/* Mobile: agg stats row */}
-                                                <div className="flex gap-3 mt-1 text-[11px] md:hidden">
-                                                    <span className="text-yellow-500">🪙{ms.avg_coin_ratio.toFixed(2)}</span>
-                                                    <span className="text-orange-400">🏛{formatNum(ms.avg_building)}</span>
-                                                    <span className="text-cyan-400">⚔{ms.team_kd.toFixed(2)}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Desktop-only: winner, agg stats, player count */}
-                                            {ms.winner && ms.winner !== 'draw' && (
-                                                <span className="hidden md:inline text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
-                                                    🏆 {ms.winner}
-                                                </span>
-                                            )}
-                                            <div className="hidden md:flex gap-3 shrink-0 text-xs">
-                                                <span className="text-yellow-500">🪙 {ms.avg_coin_ratio.toFixed(2)}</span>
-                                                <span className="text-orange-400">🏛 {formatNum(ms.avg_building)}</span>
-                                                <span className="text-cyan-400">⚔ {ms.team_kd.toFixed(2)}</span>
-                                            </div>
-                                            <span className="hidden md:inline text-neutral-600 text-xs w-10 text-right shrink-0">
-                                                {ms.player_count}人
-                                            </span>
-                                        </button>
-
-
-                                        {/* Expanded detail (lazy-loaded) */}
-                                        {isExpanded && (
-                                            <div className="border-t border-neutral-700 bg-neutral-900/50 px-4 py-3 space-y-4">
-                                                {detail?.loading ? (
-                                                    <div className="flex items-center gap-2 text-xs text-neutral-500 py-4 justify-center">
-                                                        <div className="w-3 h-3 border border-neutral-500 border-t-transparent animate-spin" />
-                                                        加载对局详情...
-                                                    </div>
-                                                ) : detail?.stats && detail.stats.length > 0 ? (
-                                                    <>
-                                                        {/* ── Battle Map (top, when roster linked) ── */}
-                                                        {detail.roster?.roster_data && (
-                                                            <BattleMap
-                                                                rosterData={detail.roster.roster_data}
-                                                                stats={detail.stats.filter(s => s.team_name === (baiye?.name || ms.team_a))}
-                                                                coinValue={detail.match?.coin_value || ms.coin_value || 720}
-                                                                baiyeName={baiye?.name}
-                                                            />
-                                                        )}
-
-                                                        {/* ── Data tables + AI analysis side by side ── */}
-                                                        <div className="flex flex-col lg:flex-row gap-4">
-                                                            {/* Left: Detail Tables */}
-                                                            <div className="flex-1 min-w-0 space-y-4">
-                                                                {[ms.team_a, ms.team_b].map(teamName => {
-                                                                    const tStats = detail.stats.filter(s => s.team_name === teamName);
-                                                                    if (tStats.length === 0) return null;
-                                                                    return (
-                                                                        <DetailTable
-                                                                            key={teamName}
-                                                                            teamName={teamName}
-                                                                            stats={tStats}
-                                                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
-                                                                            sort={detailSort}
-                                                                            onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
-                                                                            formatNum={formatNum}
-                                                                        />
-                                                                    );
-                                                                })}
-                                                            </div>
-
-                                                            {/* Right: AI Analysis */}
-                                                            <div className="lg:w-72 shrink-0">
-                                                                <div className="border border-neutral-700 bg-neutral-950/60 h-full">
-                                                                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700">
-                                                                        <span className="text-xs font-bold text-purple-400 uppercase">🤖 AI 战术分析</span>
-                                                                        <div className="flex items-center gap-1">
-                                                                            {aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
-                                                                                <button
-                                                                                    onClick={() => fetchAiAnalysis(ms.match_id, true)}
-                                                                                    className="text-[10px] px-2 py-0.5 border border-neutral-600 text-neutral-400 bg-neutral-800 hover:border-purple-500/40 hover:text-purple-400 hover:bg-purple-500/10 transition-colors font-bold"
-                                                                                    title="重新生成AI分析"
-                                                                                >
-                                                                                    🔄 重新生成
-                                                                                </button>
-                                                                            )}
-                                                                            {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
-                                                                                <button
-                                                                                    onClick={() => fetchAiAnalysis(ms.match_id)}
-                                                                                    className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
-                                                                                >
-                                                                                    分析此战
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="p-3 text-xs leading-relaxed">
-                                                                        {aiAnalysisLoading === ms.match_id ? (
-                                                                            <div className="flex flex-col items-center gap-2 py-6 text-neutral-500">
-                                                                                <div className="w-4 h-4 border-2 border-purple-500/40 border-t-purple-400 animate-spin rounded-full" />
-                                                                                <span>AI 分析中...</span>
-                                                                            </div>
-                                                                        ) : aiAnalysisCache.has(ms.match_id) ? (
-                                                                            <div className="text-neutral-300 whitespace-pre-wrap">
-                                                                                {aiAnalysisCache.get(ms.match_id)}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="text-neutral-600 text-center py-6">
-                                                                                点击「分析此战」获取 AI 战术洞察
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <div className="text-xs text-neutral-600 text-center py-4">暂无详细数据</div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </PixelCard>
-                )}
             </div>
 
             {/* Footer */}
