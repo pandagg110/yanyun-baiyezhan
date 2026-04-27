@@ -365,7 +365,7 @@ export default function AnalysisPage() {
 
     // Filters
     const [matchType, setMatchType] = useState("全部");
-    const [period, setPeriod] = useState("7");
+    const [period, setPeriod] = useState("");
 
     // View tab: players vs matches
     const [viewTab, setViewTab] = useState<AnalysisTab>('players');
