@@ -50,7 +50,7 @@ AS $$
         SUM(s.damage)                                               AS total_damage,
         SUM(s.damage_taken)                                         AS total_damage_taken,
         -- avg coin ratio = AVG(coins / coin_value) per match
-        AVG(s.coins::double precision / GREATEST(COALESCE(m.coin_value, 720), 1))
+        AVG(s.coins::double precision / GREATEST(COALESCE(m.coin_value, 792), 1))
                                                                     AS avg_coin_ratio,
         AVG(s.building_damage::double precision)                    AS avg_building,
         AVG(s.healing::double precision)                            AS avg_healing,
@@ -100,9 +100,9 @@ AS $$
         m.winner,
         m.match_type,
         m.match_start_time,
-        COALESCE(m.coin_value, 720)                                 AS coin_value,
+        COALESCE(m.coin_value, 792)                                 AS coin_value,
         COUNT(s.id)                                                 AS player_count,
-        AVG(s.coins::double precision / GREATEST(COALESCE(m.coin_value, 720), 1))
+        AVG(s.coins::double precision / GREATEST(COALESCE(m.coin_value, 792), 1))
                                                                     AS avg_coin_ratio,
         AVG(s.building_damage::double precision)                    AS avg_building,
         SUM(s.kills)::double precision / GREATEST(SUM(s.deaths), 1) AS team_kd

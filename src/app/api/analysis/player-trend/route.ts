@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
             .map(s => {
                 const m = matchMap.get(s.match_id);
                 if (!m) return null;
-                const cv = m.coin_value || 720;
+                const cv = m.coin_value || 792;
                 return {
                     match_id: m.id,
                     team_a: m.team_a,

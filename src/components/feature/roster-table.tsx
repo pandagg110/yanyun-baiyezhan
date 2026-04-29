@@ -1,7 +1,7 @@
 "use client";
 
 import { RosterCell, RosterOption, RosterSquad } from "@/types/app";
-import React, { forwardRef, useEffect, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 
 interface RosterTableProps {
     title: string;
@@ -15,6 +15,7 @@ interface RosterTableProps {
     onColumnsChange: (cols: string[]) => void;
     onSquadsChange: (squads: RosterSquad[]) => void;
     onAddOption?: (label: string, color?: string, category?: string) => void;
+    onRenameMember?: (oldName: string, newName: string) => void;
     headerColor?: string;
 }
 
@@ -129,13 +130,70 @@ function CustomOptionPopup({ onSave, onCancel }: {
 
 export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
     function RosterTable(
-        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, onAddOption, headerColor = "#e8d44d" },
+        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, onAddOption, onRenameMember, headerColor = "#e8d44d" },
         ref
     ) {
         const [editingCol, setEditingCol] = useState<number | null>(null);
         const [colEditValue, setColEditValue] = useState("");
         const [dragOverSquad, setDragOverSquad] = useState<number | null>(null);
         const [customPopup, setCustomPopup] = useState<CustomPopupState | null>(null);
+        const [editingMember, setEditingMember] = useState<{ si: number; mi: number; value: string } | null>(null);
+
+        /* ── Member row drag-reorder state ── */
+        const [rowDrag, setRowDrag] = useState<{ si: number; mi: number } | null>(null);
+        const [rowDropTarget, setRowDropTarget] = useState<{ si: number; mi: number; half: "top" | "bottom" } | null>(null);
+
+        const handleRowDragStart = useCallback((e: React.DragEvent, si: number, mi: number) => {
+            if (!isAdmin) return;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("application/roster-row", JSON.stringify({ si, mi }));
+            setRowDrag({ si, mi });
+        }, [isAdmin]);
+
+        const handleRowDragOver = useCallback((e: React.DragEvent, si: number, mi: number) => {
+            if (!isAdmin || !e.dataTransfer.types.includes("application/roster-row")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const half = (e.clientY - rect.top) < rect.height / 2 ? "top" : "bottom";
+            setRowDropTarget((prev) => {
+                if (prev?.si === si && prev?.mi === mi && prev?.half === half) return prev;
+                return { si, mi, half };
+            });
+        }, [isAdmin]);
+
+        const handleRowDrop = useCallback((e: React.DragEvent, targetSi: number, targetMi: number) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const dropHalf = rowDropTarget?.half || "bottom";
+            setRowDrag(null);
+            setRowDropTarget(null);
+            if (!isAdmin) return;
+            try {
+                const data = JSON.parse(e.dataTransfer.getData("application/roster-row"));
+                const { si: srcSi, mi: srcMi } = data as { si: number; mi: number };
+                const insertIdx = dropHalf === "bottom" ? targetMi + 1 : targetMi;
+                if (srcSi === targetSi && (srcMi === insertIdx || srcMi === insertIdx - 1)) return;
+                const next = deepClone(squads);
+                if (srcSi === targetSi) {
+                    const arr = next[srcSi].members;
+                    const [moved] = arr.splice(srcMi, 1);
+                    const finalIdx = insertIdx > srcMi ? insertIdx - 1 : insertIdx;
+                    arr.splice(finalIdx, 0, moved);
+                } else {
+                    if (next[targetSi].members.length >= MAX_SQUAD_SIZE) return;
+                    const [moved] = next[srcSi].members.splice(srcMi, 1);
+                    next[targetSi].members.splice(insertIdx, 0, moved);
+                }
+                onSquadsChange(next);
+            } catch { /* ignore invalid drag data */ }
+        }, [isAdmin, squads, onSquadsChange, rowDropTarget]);
+
+        const handleRowDragEnd = useCallback(() => {
+            setRowDrag(null);
+            setRowDropTarget(null);
+        }, []);
 
         const updateCell = (si: number, mi: number, ci: number, text: string, color?: string | null) => {
             const next = deepClone(squads);
@@ -297,8 +355,25 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                         </tr>
                                     </thead>
                                     <tbody onDragOver={(e) => handleSquadDragOver(e, si)} onDragLeave={handleSquadDragLeave} onDrop={(e) => handleSquadDrop(e, si)}>
-                                        {squad.members.map((member, mi) => (
-                                            <tr key={mi} className="hover:bg-blue-50/30 transition-colors">
+                                        {squad.members.map((member, mi) => {
+                                            const isDragging = rowDrag?.si === si && rowDrag?.mi === mi;
+                                            const isDropTop = rowDropTarget?.si === si && rowDropTarget?.mi === mi && rowDropTarget?.half === "top";
+                                            const isDropBottom = rowDropTarget?.si === si && rowDropTarget?.mi === mi && rowDropTarget?.half === "bottom";
+                                            const lineColor = accent.badge;
+                                            const dropStyle: React.CSSProperties = isDropTop
+                                                ? { boxShadow: `0 -2.5px 0 0 ${lineColor}`, position: "relative" }
+                                                : isDropBottom
+                                                ? { boxShadow: `0 2.5px 0 0 ${lineColor}`, position: "relative" }
+                                                : {};
+                                            return (
+                                            <tr key={mi}
+                                                draggable={isAdmin}
+                                                onDragStart={(e) => handleRowDragStart(e, si, mi)}
+                                                onDragOver={(e) => handleRowDragOver(e, si, mi)}
+                                                onDrop={(e) => handleRowDrop(e, si, mi)}
+                                                onDragEnd={handleRowDragEnd}
+                                                className={`transition-all duration-150 ${isDragging ? "opacity-30 scale-[0.97]" : (isDropTop || isDropBottom) ? "bg-blue-50/50" : "hover:bg-blue-50/30"}`}
+                                                style={dropStyle}>
                                                 <td className="border border-neutral-300 px-2 py-1.5 font-bold text-[11px]"
                                                     style={{
                                                         backgroundColor: member.isLeader ? accent.light : "#fff",
@@ -308,8 +383,36 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                         textOverflow: "ellipsis",
                                                     }}>
                                                     <div className="flex items-center gap-1">
+                                                        {isAdmin && <span className="cursor-grab active:cursor-grabbing text-[10px] text-neutral-300 hover:text-neutral-500 select-none" data-no-export>⠿</span>}
                                                         {member.isLeader && <span className="text-[9px] font-bold" style={{ color: accent.badge }}>★</span>}
-                                                        <span className="truncate">{member.name}</span>
+                                                        {editingMember?.si === si && editingMember?.mi === mi ? (
+                                                            <input
+                                                                autoFocus
+                                                                value={editingMember.value}
+                                                                onChange={(e) => setEditingMember({ ...editingMember, value: e.target.value })}
+                                                                onBlur={() => {
+                                                                    const newName = editingMember.value.trim();
+                                                                    if (newName && newName !== member.name) {
+                                                                        onRenameMember?.(member.name, newName);
+                                                                    }
+                                                                    setEditingMember(null);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === "Enter") {
+                                                                        (e.target as HTMLInputElement).blur();
+                                                                    }
+                                                                    if (e.key === "Escape") setEditingMember(null);
+                                                                }}
+                                                                className="flex-1 min-w-0 bg-white text-black text-[11px] px-1 border border-blue-500 outline-none"
+                                                                data-no-export
+                                                            />
+                                                        ) : (
+                                                            <span
+                                                                className={`truncate ${isAdmin ? "cursor-text" : ""}`}
+                                                                onDoubleClick={() => { if (isAdmin) setEditingMember({ si, mi, value: member.name }); }}
+                                                                title={isAdmin ? "双击改名" : member.name}
+                                                            >{member.name}</span>
+                                                        )}
                                                         {isAdmin && (
                                                             <button onClick={() => removeMember(si, mi)}
                                                                 className="text-[9px] text-neutral-400 hover:text-red-500 ml-auto shrink-0" title="移除" data-no-export>✕</button>
@@ -366,7 +469,8 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                     );
                                                 })}
                                             </tr>
-                                        ))}
+                                            );
+                                        })}
                                         {/* Drag zone + add member dropdown */}
                                         {isAdmin && !isFull && (() => {
                                             const sectionAssigned = new Set(squads.flatMap((sq) => sq.members.map((m) => m.name)));

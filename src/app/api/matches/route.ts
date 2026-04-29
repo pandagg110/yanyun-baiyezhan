@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
                 team_b,
                 match_start_time: new Date(match_start_time).toISOString(),
                 match_type: match_type || '排位',
-                coin_value: coin_value ?? 720,
+                coin_value: coin_value ?? 792,
                 winner: winner || null,
                 notes: notes || null,
                 roster_id: roster_id || null,

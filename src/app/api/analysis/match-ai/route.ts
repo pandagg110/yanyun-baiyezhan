@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
-        const coinValue = match.coin_value || 720;
+        const coinValue = match.coin_value || 792;
         const ourStats = ourTeamStats.map((s: any) => {
             const cr = (s.coins || 0) / coinValue;
             const kd = (s.kills || 0) / Math.max(s.deaths || 0, 1);

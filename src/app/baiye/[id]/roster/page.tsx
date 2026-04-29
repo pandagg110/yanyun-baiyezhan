@@ -270,6 +270,48 @@ export default function RosterPage() {
         } catch { /* ignore */ }
     };
 
+    /** Rename a member from within the squad table (updates DB + all roster sections) */
+    const handleRosterRenameMember = async (oldName: string, newName: string) => {
+        if (!newName.trim() || oldName === newName.trim()) return;
+        const trimmed = newName.trim();
+
+        // 1. Update in DB (find member by name)
+        const member = members.find((m) => m.name === oldName);
+        if (member) {
+            try {
+                await SupabaseService.renameRosterMember(member.id, trimmed);
+                setMembers((prev) => prev.map((m) => m.id === member.id ? { ...m, name: trimmed } : m).sort((a, b) => a.name.localeCompare(b.name)));
+            } catch { /* ignore - maybe duplicate */ }
+        } else {
+            // Member not in pool yet, add them
+            try {
+                const m = await SupabaseService.addRosterMember(baiyeId, trimmed);
+                setMembers((prev) => [...prev, m].sort((a, b) => a.name.localeCompare(b.name)));
+            } catch { /* ignore */ }
+        }
+
+        // 2. Update name in all roster data sections
+        setRosterData((prev) => {
+            const renameMembersInSquads = (squads: RosterSquad[]) =>
+                squads.map((sq) => ({
+                    ...sq,
+                    members: sq.members.map((m) => m.name === oldName ? { ...m, name: trimmed } : m),
+                }));
+            const renameInWall = (wall: WallTower[]) =>
+                wall.map((t) => ({
+                    ...t,
+                    members: t.members.map((n) => n === oldName ? trimmed : n),
+                }));
+            return {
+                ...prev,
+                attack: renameMembersInSquads(prev.attack),
+                defense: renameMembersInSquads(prev.defense),
+                wall: renameInWall(prev.wall),
+            };
+        });
+        setHasChanges(true);
+    };
+
     // Options handlers
     const handleAddOption = async (label: string, color?: string, category?: string) => {
         try { const o = await SupabaseService.addRosterOption(baiyeId, label, color, category || 'general'); setOptions((prev) => [...prev, o]); }
@@ -459,12 +501,12 @@ export default function RosterPage() {
                             <div style={{ display: activeTab === "attack" ? "block" : "none" }}>
                                 <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.attackColumns || rosterData.columns} squads={rosterData.attack}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} onAddOption={handleAddOption} headerColor="#fdd" />
+                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#fdd" />
                             </div>
                             <div style={{ display: activeTab === "defense" ? "block" : "none" }}>
                                 <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} onAddOption={handleAddOption} headerColor="#ddf" />
+                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#ddf" />
                             </div>
                             <div style={{ display: activeTab === "wall" ? "block" : "none" }}>
                                 <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}

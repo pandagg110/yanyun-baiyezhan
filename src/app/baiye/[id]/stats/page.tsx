@@ -54,7 +54,7 @@ export default function StatsUploadPage() {
     );
     const [winner, setWinner] = useState<string | null>(null);
     const [matchType, setMatchType] = useState("排位");
-    const [coinValue, setCoinValue] = useState(720);
+    const [coinValue, setCoinValue] = useState(792);
     const [notes, setNotes] = useState("");
     const [bigDragonTeam, setBigDragonTeam] = useState<string | null>(null);
     const [smallDragonTeam, setSmallDragonTeam] = useState<string | null>(null);
@@ -416,12 +416,12 @@ export default function StatsUploadPage() {
                                 <input
                                     type="number"
                                     value={coinValue}
-                                    onChange={(e) => setCoinValue(Number(e.target.value) || 720)}
+                                    onChange={(e) => setCoinValue(Number(e.target.value) || 792)}
                                     min={0}
                                     step={10}
                                     className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
                                 />
-                                <p className="text-[10px] text-neutral-600">默认720，后续可能调整</p>
+                                <p className="text-[10px] text-neutral-600">默认792，后续可能调整</p>
                             </div>
 
                             <div className="space-y-2">
@@ -467,21 +467,19 @@ export default function StatsUploadPage() {
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setBigDragonTeam(bigDragonTeam ? null : teamA.trim())}
-                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${
-                                            bigDragonTeam
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${bigDragonTeam
                                                 ? "bg-purple-500 border-purple-600 text-white shadow-[2px_2px_0_0_#000]"
                                                 : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {bigDragonTeam ? "✅" : "❌"} 大龙
                                     </button>
                                     <button
                                         onClick={() => setSmallDragonTeam(smallDragonTeam ? null : teamA.trim())}
-                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${
-                                            smallDragonTeam
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${smallDragonTeam
                                                 ? "bg-blue-500 border-blue-600 text-white shadow-[2px_2px_0_0_#000]"
                                                 : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
-                                        }`}
+                                            }`}
                                     >
                                         {smallDragonTeam ? "✅" : "❌"} 小龙
                                     </button>

@@ -25,16 +25,17 @@ const LANE_Y_BOT = MAP_H - 60;
 
 const JUNGLE_SPOTS: JungleSpot[] = [
     // Upper jungle area (between top and mid lanes)
-    { label: "上外野（防守）", shortLabel: "上外野", side: "defense", area: "upper", x: 240, y: 140 },
-    { label: "上外野（进攻）", shortLabel: "上外野", side: "offense", area: "upper", x: 660, y: 140 },
-    { label: "上内野（防守）", shortLabel: "上内野", side: "defense", area: "upper", x: 360, y: 155 },
-    { label: "上内野（进攻）", shortLabel: "上内野", side: "offense", area: "upper", x: 540, y: 155 },
+    // 内野 = closer to base, 外野 = closer to midline
+    { label: "上内野（防守）", shortLabel: "上内野", side: "defense", area: "upper", x: 240, y: 140 },
+    { label: "上内野（进攻）", shortLabel: "上内野", side: "offense", area: "upper", x: 660, y: 140 },
+    { label: "上外野（防守）", shortLabel: "上外野", side: "defense", area: "upper", x: 360, y: 155 },
+    { label: "上外野（进攻）", shortLabel: "上外野", side: "offense", area: "upper", x: 540, y: 155 },
 
     // Lower jungle area (between mid and bottom lanes)
-    { label: "下内野（防守）", shortLabel: "下内野", side: "defense", area: "lower", x: 360, y: MAP_H - 155 },
-    { label: "下内野（进攻）", shortLabel: "下内野", side: "offense", area: "lower", x: 540, y: MAP_H - 155 },
-    { label: "下外野（防守）", shortLabel: "下外野", side: "defense", area: "lower", x: 240, y: MAP_H - 140 },
-    { label: "下外野（进攻）", shortLabel: "下外野", side: "offense", area: "lower", x: 660, y: MAP_H - 140 },
+    { label: "下外野（防守）", shortLabel: "下外野", side: "defense", area: "lower", x: 360, y: MAP_H - 155 },
+    { label: "下外野（进攻）", shortLabel: "下外野", side: "offense", area: "lower", x: 540, y: MAP_H - 155 },
+    { label: "下内野（防守）", shortLabel: "下内野", side: "defense", area: "lower", x: 240, y: MAP_H - 140 },
+    { label: "下内野（进攻）", shortLabel: "下内野", side: "offense", area: "lower", x: 660, y: MAP_H - 140 },
 ];
 
 interface JungleAssignment {
@@ -74,10 +75,13 @@ function extractJungleAssignments(
     stats: MatchStat[],
     coinValue: number,
 ): JungleData[] {
-    const columns = rosterData.columns || [];
-    // Find the "打野" column index
-    const jungleColIdx = columns.findIndex(c => c.includes("打野"));
-    if (jungleColIdx < 0) return JUNGLE_SPOTS.map(spot => ({ spot, assignments: [] }));
+    const defenseColumns = rosterData.columns || [];
+    const attackColumns = rosterData.attackColumns || defenseColumns;
+    // Find the "打野" column index separately for defense and attack
+    // (attack and defense have different column layouts)
+    const defJungleIdx = defenseColumns.findIndex(c => c.includes("打野"));
+    const atkJungleIdx = attackColumns.findIndex(c => c.includes("打野"));
+    if (defJungleIdx < 0 && atkJungleIdx < 0) return JUNGLE_SPOTS.map(spot => ({ spot, assignments: [] }));
 
     // Build a map: jungle label → assignments
     const assignmentMap = new Map<string, JungleAssignment[]>();
@@ -91,11 +95,12 @@ function extractJungleAssignments(
         statsMap.set(s.player_name, s);
     }
 
-    const processSquads = (squads: { members: RosterSquadMember[] }[], prefix: string) => {
+    const processSquads = (squads: { members: RosterSquadMember[] }[], prefix: string, colIdx: number) => {
+        if (colIdx < 0) return;
         squads.forEach((squad, si) => {
             for (const member of squad.members) {
-                if (jungleColIdx < member.cells.length) {
-                    const cellText = member.cells[jungleColIdx]?.text?.trim();
+                if (colIdx < member.cells.length) {
+                    const cellText = member.cells[colIdx]?.text?.trim();
                     if (cellText && assignmentMap.has(cellText)) {
                         const list = assignmentMap.get(cellText)!;
                         const stat = statsMap.get(member.name);
@@ -110,8 +115,8 @@ function extractJungleAssignments(
         });
     };
 
-    processSquads(rosterData.attack || [], "进攻");
-    processSquads(rosterData.defense || [], "防守");
+    processSquads(rosterData.attack || [], "进攻", atkJungleIdx);
+    processSquads(rosterData.defense || [], "防守", defJungleIdx);
 
     return JUNGLE_SPOTS.map(spot => ({
         spot,
@@ -137,7 +142,7 @@ function computeTeamComparison(allStats: MatchStat[], baiyeName: string, matchIn
     return { ourKills, oppKills, ourCoins, oppCoins, ourAvgHealing, oppAvgHealing };
 }
 
-export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName, matchInfo, allStats }: BattleMapProps) {
+export function BattleMap({ rosterData, stats = [], coinValue = 792, baiyeName, matchInfo, allStats }: BattleMapProps) {
     const jungleData = useMemo(() => {
         if (!rosterData) return JUNGLE_SPOTS.map(spot => ({ spot, assignments: [] as JungleAssignment[] }));
         return extractJungleAssignments(rosterData, stats, coinValue);
@@ -193,9 +198,8 @@ export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName, 
                             {(() => {
                                 const d = getDragonLabel(bigDragonTeam);
                                 return (
-                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${
-                                        d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
-                                    }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
+                                        }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
                                         <span>🐉</span>
                                         <span>大龙</span>
                                         <span className="text-[10px] opacity-80">{d ? d.label : '—'}</span>
@@ -206,9 +210,8 @@ export function BattleMap({ rosterData, stats = [], coinValue = 720, baiyeName, 
                             {(() => {
                                 const d = getDragonLabel(smallDragonTeam);
                                 return (
-                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${
-                                        d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
-                                    }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 border text-xs font-bold ${d ? `border-opacity-40` : 'border-neutral-700 bg-neutral-800/50'
+                                        }`} style={d ? { borderColor: d.color + '60', backgroundColor: d.bg + 'cc', color: d.color } : { color: '#666' }}>
                                         <span>🦎</span>
                                         <span>小龙</span>
                                         <span className="text-[10px] opacity-80">{d ? d.label : '—'}</span>

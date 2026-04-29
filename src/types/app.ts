@@ -87,7 +87,7 @@ export interface Match {
     match_start_time?: string;  // 对战开始时间
     match_date?: string;        // auto-synced from match_start_time
     match_type?: string;        // 约战 | 正赛 | 排位 (default)
-    coin_value?: number;         // 逗币基数，默认720
+    coin_value?: number;         // 逗币基数，默认792
     big_dragon_team?: string | null;    // 拿到大龙的百业名称
     small_dragon_team?: string | null;  // 拿到小龙的百业名称
     notes?: string;

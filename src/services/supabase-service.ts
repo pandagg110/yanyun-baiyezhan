@@ -978,6 +978,17 @@ export const SupabaseService = {
     },
 
     /**
+     * Rename a roster member in-place (preserves ID)
+     */
+    renameRosterMember: async (memberId: string, newName: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_roster_members')
+            .update({ name: newName.trim() })
+            .eq('id', memberId);
+        if (error) throw error;
+    },
+
+    /**
      * Import player names from match_stats into roster pool
      */
     importMembersFromMatchStats: async (baiyeId: string): Promise<number> => {

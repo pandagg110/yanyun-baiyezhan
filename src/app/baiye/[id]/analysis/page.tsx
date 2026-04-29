@@ -747,7 +747,7 @@ export default function AnalysisPage() {
         if (selectedPlayer) {
             fetchPlayerTrend(selectedPlayer);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedPlayer]);
 
     // When compare players change, fetch their trends too
@@ -755,7 +755,7 @@ export default function AnalysisPage() {
         for (const name of comparePlayers) {
             fetchPlayerTrend(name);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [comparePlayers]);
 
     const playerMatchData = useMemo((): TrendPoint[] => {
@@ -820,7 +820,7 @@ export default function AnalysisPage() {
             fetchMatchDetail(expandedMatchId);
             loadSavedAiAnalysis(expandedMatchId);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [expandedMatchId]);
 
     // NOTE: AI analysis GENERATION is manual-only. Saved analyses are auto-loaded.
@@ -1024,8 +1024,8 @@ export default function AnalysisPage() {
                                         key={t}
                                         onClick={() => setMatchType(t)}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${matchType === t
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {t}
@@ -1045,8 +1045,8 @@ export default function AnalysisPage() {
                                         key={p.value}
                                         onClick={() => setPeriod(p.value)}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${period === p.value
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {p.label}
@@ -1147,7 +1147,7 @@ export default function AnalysisPage() {
                                         <BattleMap
                                             rosterData={detail.roster?.roster_data}
                                             stats={detail.stats.filter(s => s.team_name === (baiye?.name || ms.team_a))}
-                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
+                                            coinValue={detail.match?.coin_value || ms.coin_value || 792}
                                             baiyeName={baiye?.name}
                                             matchInfo={detail.match ? {
                                                 team_a: detail.match.team_a || ms.team_a,
@@ -1171,7 +1171,7 @@ export default function AnalysisPage() {
                                                             key={teamName}
                                                             teamName={teamName}
                                                             stats={tStats}
-                                                            coinValue={detail.match?.coin_value || ms.coin_value || 720}
+                                                            coinValue={detail.match?.coin_value || ms.coin_value || 792}
                                                             sort={detailSort}
                                                             onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
                                                             formatNum={formatNum}
@@ -1258,11 +1258,10 @@ export default function AnalysisPage() {
                                         <button
                                             key={opt.key}
                                             onClick={() => setPlayerSort(toggleSort(playerSort, opt.key))}
-                                            className={`flex items-center gap-0.5 px-2.5 py-1 text-[11px] font-bold border transition-all ${
-                                                isActive
+                                            className={`flex items-center gap-0.5 px-2.5 py-1 text-[11px] font-bold border transition-all ${isActive
                                                     ? 'bg-yellow-500/15 border-yellow-500/50 text-yellow-400'
                                                     : 'bg-neutral-800 border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300'
-                                            }`}
+                                                }`}
                                         >
                                             <span className={isActive ? 'text-yellow-400' : opt.color}>{opt.label}</span>
                                             {isActive && (
@@ -1282,11 +1281,10 @@ export default function AnalysisPage() {
                                     <div
                                         key={p.player_name}
                                         onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
-                                        className={`border-2 px-3 py-3 cursor-pointer transition-colors ${
-                                            isSelected
+                                        className={`border-2 px-3 py-3 cursor-pointer transition-colors ${isSelected
                                                 ? 'border-yellow-500/60 bg-yellow-500/8'
                                                 : 'border-neutral-700 bg-neutral-900/40 hover:border-neutral-600'
-                                        }`}
+                                            }`}
                                     >
                                         {/* Row 1: rank + name + rank indicator */}
                                         <div className="flex items-center gap-2 mb-2">
@@ -1406,8 +1404,8 @@ export default function AnalysisPage() {
                                                 key={p.player_name}
                                                 onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
                                                 className={`border-b border-neutral-800 cursor-pointer transition-colors ${isSelected
-                                                        ? "bg-yellow-500/10 border-yellow-500/30"
-                                                        : "hover:bg-neutral-750 hover:bg-white/5"
+                                                    ? "bg-yellow-500/10 border-yellow-500/30"
+                                                    : "hover:bg-neutral-750 hover:bg-white/5"
                                                     }`}
                                             >
                                                 <td className="py-2.5 px-2 text-neutral-600 text-xs">
@@ -1476,8 +1474,8 @@ export default function AnalysisPage() {
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
                                                     <span className={`text-xs font-bold ${p.avg_coin_ratio >= 1.5 ? "text-yellow-400" :
-                                                            p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
-                                                                "text-neutral-400"
+                                                        p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
+                                                            "text-neutral-400"
                                                         }`}>
                                                         {p.avg_coin_ratio.toFixed(2)}
                                                     </span>
@@ -1494,9 +1492,9 @@ export default function AnalysisPage() {
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
                                                     <span className={`text-xs font-bold px-2 py-0.5 ${p.kd >= 10 ? "text-cyan-300 bg-cyan-500/10" :
-                                                            p.kd >= 5 ? "text-cyan-400" :
-                                                                p.kd >= 3 ? "text-green-400" :
-                                                                    "text-neutral-400"
+                                                        p.kd >= 5 ? "text-cyan-400" :
+                                                            p.kd >= 3 ? "text-green-400" :
+                                                                "text-neutral-400"
                                                         }`}>
                                                         {p.kd.toFixed(2)}
                                                     </span>
@@ -1549,8 +1547,8 @@ export default function AnalysisPage() {
                                             <div
                                                 key={log.id}
                                                 className={`flex items-center gap-3 px-3 py-2 text-xs border transition-all ${log.is_undone
-                                                        ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
-                                                        : 'border-neutral-700 bg-neutral-800/50'
+                                                    ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
+                                                    : 'border-neutral-700 bg-neutral-800/50'
                                                     }`}
                                             >
                                                 <span className="text-neutral-600 w-5 shrink-0">{idx + 1}</span>
@@ -1627,8 +1625,8 @@ export default function AnalysisPage() {
                                             key={m.key}
                                             onClick={() => setChartMetric(m.key)}
                                             className={`px-4 py-2 text-xs font-bold border-2 transition-all ${chartMetric === m.key
-                                                    ? "border-current text-black"
-                                                    : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                                ? "border-current text-black"
+                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                                 }`}
                                             style={chartMetric === m.key ? { backgroundColor: m.color, borderColor: m.color } : {}}
                                         >
@@ -1665,8 +1663,8 @@ export default function AnalysisPage() {
                                             <button
                                                 onClick={() => setCompareDropdownOpen(v => !v)}
                                                 className={`px-3 py-1.5 text-xs font-bold border-2 border-dashed transition-all ${compareDropdownOpen
-                                                        ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
-                                                        : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
+                                                    ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
+                                                    : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
                                                     }`}
                                             >
                                                 + 添加对比玩家
