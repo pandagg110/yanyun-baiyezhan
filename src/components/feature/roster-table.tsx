@@ -149,9 +149,9 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                         const leaderName = squad.members.find((m) => m.isLeader)?.name || "";
                         const isFull = squad.members.length >= MAX_SQUAD_SIZE;
                         return (
-                            <div key={si} className="mb-5" style={{ borderRadius: 6, overflow: "hidden", border: `2px solid ${accent.border}33` }}>
+                            <div key={si} className="mb-5" style={{ borderRadius: 6, border: `2px solid ${accent.border}33` }}>
                                 {/* Squad header bar */}
-                                <div className="flex items-center justify-between px-3 py-2" style={{ background: `linear-gradient(135deg, ${accent.bg}, ${accent.light})`, borderBottom: `2px solid ${accent.border}44` }}>
+                                <div className="flex items-center justify-between px-3 py-2" style={{ background: `linear-gradient(135deg, ${accent.bg}, ${accent.light})`, borderBottom: `2px solid ${accent.border}44`, borderRadius: "4px 4px 0 0" }}>
                                     <div className="flex items-center gap-2">
                                         <span className="inline-flex items-center justify-center text-white font-black text-[11px] rounded"
                                             style={{ backgroundColor: accent.badge, width: 22, height: 22, lineHeight: "22px" }}>
@@ -244,42 +244,61 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                     const isEditing = editingCell === cellKey;
                                                     return (
                                                         <td key={ci}
-                                                            className={`border border-neutral-300 px-1 py-1 text-center relative ${isAdmin && !isEditing ? "cursor-pointer hover:bg-blue-50" : ""}`}
+                                                            className={`border border-neutral-300 px-1 py-1 text-center ${isAdmin && !isEditing ? "cursor-pointer hover:bg-blue-50" : ""}`}
                                                             style={{
                                                                 backgroundColor: cell.color || "#fff",
                                                                 color: "#000",
-                                                                overflow: "hidden",
-                                                                textOverflow: "ellipsis",
-                                                                whiteSpace: "nowrap",
                                                             }}
                                                             onClick={() => { if (isAdmin && !isEditing) setEditingCell(cellKey); }}>
-                                                            {isEditing ? (
-                                                                <CellEditor value={cell.text} options={options} columnName={columns[ci] || ""}
-                                                                    onSave={(text, color) => updateCell(si, mi, ci, text, color)}
-                                                                    onCancel={() => setEditingCell(null)} />
-                                                            ) : (
-                                                                <span className="text-[11px]" title={cell.text}>{cell.text}</span>
-                                                            )}
+                                                            <div className="relative" style={{ overflow: isEditing ? "visible" : "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                                {isEditing ? (
+                                                                    <CellEditor value={cell.text} options={options} columnName={columns[ci] || ""}
+                                                                        onSave={(text, color) => updateCell(si, mi, ci, text, color)}
+                                                                        onCancel={() => setEditingCell(null)} />
+                                                                ) : (
+                                                                    <span className="text-[11px]" title={cell.text}>{cell.text}</span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     );
                                                 })}
                                             </tr>
                                         ))}
-                                        {/* Drag zone — only show if squad is NOT full and user is admin */}
-                                        {isAdmin && !isFull && (
+                                        {/* Drag zone + add member dropdown — only show if squad is NOT full and user is admin */}
+                                        {isAdmin && !isFull && (() => {
+                                            const sectionAssigned = new Set(squads.flatMap((sq) => sq.members.map((m) => m.name)));
+                                            const unassigned = availableMembers.filter((n) => !sectionAssigned.has(n));
+                                            return (
                                             <tr data-no-export>
                                                 <td colSpan={columns.length + 1}
-                                                    className={`border border-dashed px-2 py-2.5 text-center text-[10px] transition-all ${
+                                                    className={`border border-dashed px-2 py-2 text-center text-[10px] transition-all ${
                                                         dragOverSquad === si
                                                             ? "border-cyan-400 bg-cyan-50 text-cyan-600"
                                                             : "border-neutral-300 text-neutral-400"
                                                     }`}>
-                                                    {dragOverSquad === si
-                                                        ? <span className="font-bold">📥 放下添加成员</span>
-                                                        : <span>拖拽人员到此处 ({squad.members.length}/{MAX_SQUAD_SIZE})</span>}
+                                                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                                                        {dragOverSquad === si
+                                                            ? <span className="font-bold">📥 放下添加成员</span>
+                                                            : <>
+                                                                <span className="text-neutral-400">拖拽或选择添加 ({squad.members.length}/{MAX_SQUAD_SIZE})</span>
+                                                                {unassigned.length > 0 && (
+                                                                    <select
+                                                                        value=""
+                                                                        onChange={(e) => { if (e.target.value) addMember(si, e.target.value); }}
+                                                                        className="text-[10px] bg-white border border-neutral-300 rounded px-1 py-0.5 text-black cursor-pointer max-w-[100px]"
+                                                                    >
+                                                                        <option value="">+ 添加成员</option>
+                                                                        {unassigned.map((n) => (
+                                                                            <option key={n} value={n}>{n}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                            </>}
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        )}
+                                            );
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>
