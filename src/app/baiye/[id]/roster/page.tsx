@@ -459,12 +459,12 @@ export default function RosterPage() {
                             <div style={{ display: activeTab === "attack" ? "block" : "none" }}>
                                 <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.attackColumns || rosterData.columns} squads={rosterData.attack}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} headerColor="#fdd" />
+                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} onAddOption={handleAddOption} headerColor="#fdd" />
                             </div>
                             <div style={{ display: activeTab === "defense" ? "block" : "none" }}>
                                 <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
                                     isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} headerColor="#ddf" />
+                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} onAddOption={handleAddOption} headerColor="#ddf" />
                             </div>
                             <div style={{ display: activeTab === "wall" ? "block" : "none" }}>
                                 <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}

@@ -14,6 +14,7 @@ interface RosterTableProps {
     globalAssignedNames: Set<string>;
     onColumnsChange: (cols: string[]) => void;
     onSquadsChange: (squads: RosterSquad[]) => void;
+    onAddOption?: (label: string, color?: string, category?: string) => void;
     headerColor?: string;
 }
 
@@ -29,66 +30,117 @@ function getColumnCategory(colName: string): string | null {
     return null;
 }
 
-function CellEditor({ value, options, columnName, onSave, onCancel }: {
-    value: string; options: RosterOption[]; columnName: string;
-    onSave: (text: string, color?: string | null) => void; onCancel: () => void;
-}) {
-    const [text, setText] = useState(value);
-    const inputRef = useRef<HTMLInputElement>(null);
-    useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
-
+/** Get filtered options for a specific column */
+function getOptionsForColumn(options: RosterOption[], columnName: string): RosterOption[] {
     const category = getColumnCategory(columnName);
-    const filtered = options
-        .filter((o) => !category || o.category === category)
-        .filter((o) => !text || o.label.toLowerCase().includes(text.toLowerCase()));
+    return options.filter((o) => !category || o.category === category);
+}
+
+/* ──── Preset color palette for custom option popup ──── */
+const COLOR_PALETTE = [
+    "#d4edda", "#c3e6cb", "#bee5eb", "#b8daff",
+    "#d6d8db", "#ffeeba", "#f5c6cb", "#e2c6f5",
+    "#fdd", "#ddf", "#dfd", "#ffd",
+    "#f0e68c", "#ffcccb", "#c1ffc1", "#add8e6",
+];
+
+/* ──── Accent color palettes per squad index ──── */
+const SQUAD_ACCENTS = [
+    { bg: "#fef3c7", border: "#f59e0b", badge: "#d97706", text: "#92400e", light: "#fffbeb" },
+    { bg: "#dbeafe", border: "#3b82f6", badge: "#2563eb", text: "#1e40af", light: "#eff6ff" },
+    { bg: "#dcfce7", border: "#22c55e", badge: "#16a34a", text: "#166534", light: "#f0fdf4" },
+    { bg: "#fce7f3", border: "#ec4899", badge: "#db2777", text: "#9d174d", light: "#fdf2f8" },
+    { bg: "#e0e7ff", border: "#6366f1", badge: "#4f46e5", text: "#3730a3", light: "#eef2ff" },
+    { bg: "#fed7aa", border: "#f97316", badge: "#ea580c", text: "#9a3412", light: "#fff7ed" },
+];
+
+/* ──── Custom option popup ──── */
+interface CustomPopupState {
+    si: number; mi: number; ci: number; columnName: string;
+}
+
+function CustomOptionPopup({ onSave, onCancel }: {
+    onSave: (text: string, color: string) => void;
+    onCancel: () => void;
+}) {
+    const [text, setText] = useState("");
+    const [color, setColor] = useState(COLOR_PALETTE[0]);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { inputRef.current?.focus(); }, []);
+
+    const handleSave = () => {
+        if (!text.trim()) return;
+        onSave(text.trim(), color);
+    };
 
     return (
-        <div className="absolute z-50 left-0 top-0 min-w-[120px]" onClick={(e) => e.stopPropagation()}>
-            <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") onSave(text, null); if (e.key === "Escape") onCancel(); }}
-                onBlur={() => setTimeout(onCancel, 200)}
-                className="w-full px-1.5 py-1 text-xs bg-white text-black border-2 border-blue-500 outline-none" />
-            {filtered.length > 0 && (
-                <div className="absolute left-0 top-full bg-white border border-neutral-300 shadow-lg max-h-[160px] overflow-y-auto w-max min-w-full z-50">
-                    {filtered.slice(0, 20).map((opt) => (
-                        <button key={opt.id}
-                            onMouseDown={(e) => { e.preventDefault(); onSave(opt.label, opt.color); }}
-                            className="flex items-center gap-1.5 w-full px-2 py-1 text-xs text-left hover:bg-blue-50 text-black">
-                            {opt.color && <span className="inline-block w-3 h-3 border border-neutral-300 shrink-0" style={{ backgroundColor: opt.color }} />}
-                            <span>{opt.label}</span>
-                        </button>
-                    ))}
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onCancel}>
+            <div className="absolute inset-0 bg-black/40" />
+            <div className="relative bg-white rounded-lg shadow-2xl border-2 border-neutral-200 p-4 w-[280px] space-y-3"
+                onClick={(e) => e.stopPropagation()}>
+                <div className="text-sm font-bold text-neutral-800">✏️ 自定义选项</div>
+
+                {/* Text input */}
+                <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) handleSave(); if (e.key === "Escape") onCancel(); }}
+                    placeholder="输入选项名称..."
+                    className="w-full px-3 py-2 text-sm border-2 border-neutral-300 rounded-md outline-none focus:border-blue-500 text-black" />
+
+                {/* Color picker */}
+                <div>
+                    <div className="text-[11px] text-neutral-500 font-bold mb-1.5">选择颜色</div>
+                    <div className="grid grid-cols-8 gap-1.5">
+                        {COLOR_PALETTE.map((c) => (
+                            <button key={c} onClick={() => setColor(c)}
+                                className={`w-6 h-6 rounded border-2 transition-all ${color === c ? "border-blue-500 scale-110 shadow-md" : "border-neutral-300 hover:border-neutral-400"}`}
+                                style={{ backgroundColor: c }} />
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                            className="w-6 h-6 border border-neutral-300 rounded cursor-pointer" />
+                        <span className="text-[10px] text-neutral-400">自定义颜色</span>
+                    </div>
                 </div>
-            )}
+
+                {/* Preview */}
+                {text.trim() && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-neutral-200" style={{ backgroundColor: color }}>
+                        <span className="text-xs font-medium text-black">预览: {text.trim()}</span>
+                    </div>
+                )}
+
+                {/* Buttons */}
+                <div className="flex gap-2 justify-end">
+                    <button onClick={onCancel}
+                        className="px-3 py-1.5 text-xs text-neutral-500 border border-neutral-300 rounded hover:bg-neutral-100">
+                        取消
+                    </button>
+                    <button onClick={handleSave} disabled={!text.trim()}
+                        className="px-3 py-1.5 text-xs font-bold text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed">
+                        确认添加
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
 
-/* ──── Accent color palettes per squad index ──── */
-const SQUAD_ACCENTS = [
-    { bg: "#fef3c7", border: "#f59e0b", badge: "#d97706", text: "#92400e", light: "#fffbeb" },  // amber
-    { bg: "#dbeafe", border: "#3b82f6", badge: "#2563eb", text: "#1e40af", light: "#eff6ff" },  // blue
-    { bg: "#dcfce7", border: "#22c55e", badge: "#16a34a", text: "#166534", light: "#f0fdf4" },  // green
-    { bg: "#fce7f3", border: "#ec4899", badge: "#db2777", text: "#9d174d", light: "#fdf2f8" },  // pink
-    { bg: "#e0e7ff", border: "#6366f1", badge: "#4f46e5", text: "#3730a3", light: "#eef2ff" },  // indigo
-    { bg: "#fed7aa", border: "#f97316", badge: "#ea580c", text: "#9a3412", light: "#fff7ed" },  // orange
-];
-
 export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
     function RosterTable(
-        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, headerColor = "#e8d44d" },
+        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, onAddOption, headerColor = "#e8d44d" },
         ref
     ) {
-        const [editingCell, setEditingCell] = useState<string | null>(null);
         const [editingCol, setEditingCol] = useState<number | null>(null);
         const [colEditValue, setColEditValue] = useState("");
         const [dragOverSquad, setDragOverSquad] = useState<number | null>(null);
+        const [customPopup, setCustomPopup] = useState<CustomPopupState | null>(null);
 
         const updateCell = (si: number, mi: number, ci: number, text: string, color?: string | null) => {
             const next = deepClone(squads);
             next[si].members[mi].cells[ci] = { text, color: color ?? next[si].members[mi].cells[ci].color };
             onSquadsChange(next);
-            setEditingCell(null);
         };
 
         const addMember = (si: number, name: string) => {
@@ -136,6 +188,31 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
             if (!isAdmin) return;
             const name = e.dataTransfer.getData("text/plain");
             if (name) addMember(si, name);
+        };
+
+        /** Handle cell select change */
+        const handleCellSelect = (si: number, mi: number, ci: number, value: string, columnName: string) => {
+            if (value === "__custom__") {
+                setCustomPopup({ si, mi, ci, columnName });
+            } else if (value === "") {
+                updateCell(si, mi, ci, "", null);
+            } else {
+                const colOptions = getOptionsForColumn(options, columnName);
+                const opt = colOptions.find((o) => o.label === value);
+                updateCell(si, mi, ci, value, opt?.color || null);
+            }
+        };
+
+        /** Handle custom popup save — update cell + auto-add to options */
+        const handleCustomSave = (text: string, color: string) => {
+            if (!customPopup) return;
+            const { si, mi, ci, columnName } = customPopup;
+            const category = getColumnCategory(columnName) || "general";
+            updateCell(si, mi, ci, text, color);
+            if (onAddOption) {
+                onAddOption(text, color, category);
+            }
+            setCustomPopup(null);
         };
 
         /* Calculate fixed column widths */
@@ -240,31 +317,57 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                     </div>
                                                 </td>
                                                 {member.cells.map((cell, ci) => {
-                                                    const cellKey = `${si}-${mi}-${ci}`;
-                                                    const isEditing = editingCell === cellKey;
+                                                    const columnName = columns[ci] || "";
+                                                    const colOptions = getOptionsForColumn(options, columnName);
+                                                    const hasMatchingOption = colOptions.some((o) => o.label === cell.text);
+                                                    const isCustomValue = cell.text && !hasMatchingOption;
+                                                    const hasValue = !!cell.text;
+
                                                     return (
                                                         <td key={ci}
-                                                            className={`border border-neutral-300 px-1 py-1 text-center ${isAdmin && !isEditing ? "cursor-pointer hover:bg-blue-50" : ""}`}
+                                                            className="border border-neutral-300 px-0.5 py-0.5 text-center"
                                                             style={{
                                                                 backgroundColor: cell.color || "#fff",
                                                                 color: "#000",
-                                                            }}
-                                                            onClick={() => { if (isAdmin && !isEditing) setEditingCell(cellKey); }}>
-                                                            <div className="relative" style={{ overflow: isEditing ? "visible" : "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                                {isEditing ? (
-                                                                    <CellEditor value={cell.text} options={options} columnName={columns[ci] || ""}
-                                                                        onSave={(text, color) => updateCell(si, mi, ci, text, color)}
-                                                                        onCancel={() => setEditingCell(null)} />
-                                                                ) : (
-                                                                    <span className="text-[11px]" title={cell.text}>{cell.text}</span>
-                                                                )}
-                                                            </div>
+                                                            }}>
+                                                            {isAdmin ? (
+                                                                <select
+                                                                    value={isCustomValue ? "__current_custom__" : cell.text}
+                                                                    onChange={(e) => handleCellSelect(si, mi, ci, e.target.value, columnName)}
+                                                                    className="w-full text-[10px] border-0 outline-none cursor-pointer text-center font-medium"
+                                                                    style={{
+                                                                        backgroundColor: "transparent",
+                                                                        color: "#000",
+                                                                        appearance: hasValue ? "none" : "auto",
+                                                                        WebkitAppearance: hasValue ? "none" as any : "auto" as any,
+                                                                        padding: hasValue ? "2px 4px" : undefined,
+                                                                    }}>
+                                                                    <option value="">—</option>
+                                                                    {isCustomValue && (
+                                                                        <option value="__current_custom__">{cell.text}</option>
+                                                                    )}
+                                                                    {colOptions.map((opt) => (
+                                                                        <option key={opt.id} value={opt.label}>{opt.label}</option>
+                                                                    ))}
+                                                                    <option value="__custom__">✏️ 自定义...</option>
+                                                                </select>
+                                                            ) : (
+                                                                <span className="text-[11px]" title={cell.text}
+                                                                    style={{
+                                                                        overflow: "hidden",
+                                                                        textOverflow: "ellipsis",
+                                                                        whiteSpace: "nowrap",
+                                                                        display: "block",
+                                                                    }}>
+                                                                    {cell.text}
+                                                                </span>
+                                                            )}
                                                         </td>
                                                     );
                                                 })}
                                             </tr>
                                         ))}
-                                        {/* Drag zone + add member dropdown — only show if squad is NOT full and user is admin */}
+                                        {/* Drag zone + add member dropdown */}
                                         {isAdmin && !isFull && (() => {
                                             const sectionAssigned = new Set(squads.flatMap((sq) => sq.members.map((m) => m.name)));
                                             const unassigned = availableMembers.filter((n) => !sectionAssigned.has(n));
@@ -305,6 +408,14 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                         );
                     })}
                 </div>
+
+                {/* Custom option popup */}
+                {customPopup && (
+                    <CustomOptionPopup
+                        onSave={handleCustomSave}
+                        onCancel={() => setCustomPopup(null)}
+                    />
+                )}
             </div>
         );
     }
