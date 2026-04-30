@@ -173,6 +173,9 @@ export interface Todo {
     status: 'todo' | 'doing' | 'done';
     batch_time_start?: string;
     batch_time_end?: string;
+    keywords?: string[];
+    reopen_count?: number;
+    related_match_ids?: string[];
     created_by?: string;
     created_at: string;
     updated_at?: string;

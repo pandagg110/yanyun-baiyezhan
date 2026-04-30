@@ -1,8 +1,6 @@
 "use client";
 
-import { AdminBatchPanel } from "@/components/feature/admin-batch-panel";
 import { Guestbook } from "@/components/feature/guestbook";
-import { TodoPanel } from "@/components/feature/todo-panel";
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
@@ -64,9 +62,6 @@ export default function BaiyeHallPage() {
     const [roomCode, setRoomCode] = useState("");
     const [joinPassword, setJoinPassword] = useState("");
     const [isJoining, setIsJoining] = useState(false);
-
-    // Todo refresh
-    const [todoRefreshKey, setTodoRefreshKey] = useState(0);
 
     useEffect(() => {
         const init = async () => {
@@ -244,28 +239,21 @@ export default function BaiyeHallPage() {
                         </div>
                     </PixelCard>
 
-                    {/* Todo Panel - visible to all */}
-                    <TodoPanel
-                        key={todoRefreshKey}
-                        baiyeId={baiyeId}
-                        isAdmin={user?.role === 'admin'}
-                    />
-
-                    {/* Feedback Button - links to standalone page (supports unauthenticated users) */}
+                    {/* Improvement Hub Navigation */}
                     <button
-                        onClick={() => router.push(`/baiye/${baiyeId}/feedback`)}
-                        className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-sm border-4 border-black hover:from-purple-500 hover:to-pink-500 transition-all shadow-[4px_4px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                        onClick={() => router.push(`/baiye/${baiyeId}/improvement`)}
+                        className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-sm border-4 border-black hover:from-purple-500 hover:to-indigo-500 transition-all shadow-[4px_4px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
                     >
-                        📝 战后反馈
+                        🔧 战术改进中心
                     </button>
 
-                    {/* Admin Batch Panel */}
-                    {user?.role === 'admin' && (
-                        <AdminBatchPanel
-                            baiyeId={baiyeId}
-                            onTodosGenerated={() => setTodoRefreshKey(k => k + 1)}
-                        />
-                    )}
+                    {/* Feedback Button - standalone page for all players (supports unauthenticated) */}
+                    <button
+                        onClick={() => router.push(`/baiye/${baiyeId}/feedback`)}
+                        className="w-full py-3 bg-gradient-to-r from-pink-600 to-rose-600 text-white font-bold text-sm border-4 border-black hover:from-pink-500 hover:to-rose-500 transition-all shadow-[4px_4px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                    >
+                        📝 战后反馈（玩家通道）
+                    </button>
 
                     {/* Create Room - Only for VIP/Admin */}
                     {canCreateRoom && (

@@ -19,7 +19,14 @@ const SYSTEM_PROMPT = `你是一个游戏运营分析专家。你的任务是分
     {
       "title": "简短的优化标题（10字以内）",
       "description": "问题描述和建议的解决方向",
-      "priority": "high|medium|low"
+      "priority": "high|medium|low",
+      "keywords": ["关键词1", "关键词2"]
+    }
+  ],
+  "reopens": [
+    {
+      "original_todo_id": "已完成但被再次提及的老问题ID",
+      "reason": "被再次提及的原因"
     }
   ]
 }
@@ -32,7 +39,9 @@ const SYSTEM_PROMPT = `你是一个游戏运营分析专家。你的任务是分
 5. 最多生成10条ToDo
 6. 只返回 JSON，不要返回其他文字
 7. priority 只能是 "high", "medium", "low" 三种
-8. 如果有做得好的地方也可以生成 "维持/加强" 类型的低优先级 ToDo`;
+8. 如果有做得好的地方也可以生成 "维持/加强" 类型的低优先级 ToDo
+9. keywords 字段：为每条 ToDo 提取2-4个核心关键词，用于后续在对战复盘中搜索关联问题（例如"打野"、"配合"、"走位"等战术词汇）
+10. 如果提供了"已有计划"列表，检查是否有已完成(done)的老问题被新反馈再次提及，如果有，在 reopens 数组中列出`;
 
 /**
  * POST /api/feedback/summarize
@@ -114,6 +123,21 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Fetch existing todos to inject as context (for reopen detection)
+        let existingTodosContext = '';
+        try {
+            const { data: existingTodos } = await supabase
+                .from('baiyezhan_todos')
+                .select('id, title, description, status')
+                .eq('baiye_id', baiye_id)
+                .order('created_at', { ascending: false })
+                .limit(30);
+            if (existingTodos && existingTodos.length > 0) {
+                existingTodosContext = '\n\n=== 已有计划（检查是否有done的老问题被再次提及） ===\n' +
+                    existingTodos.map((t: any) => `[${t.status}] ID:${t.id} "${t.title}" - ${t.description || ''}`).join('\n');
+            }
+        } catch { /* ignore */ }
+
         // Format feedbacks for AI
         const feedbackText = feedbacks.map((f, i) => {
             const parts = [
@@ -141,7 +165,7 @@ export async function POST(request: NextRequest) {
                         content: [
                             {
                                 type: 'input_text',
-                                text: `${SYSTEM_PROMPT}\n\n以下是 ${feedbacks.length} 条玩家反馈数据，请分析并生成 ToDo 列表：\n\n${feedbackText}`,
+                                text: `${SYSTEM_PROMPT}\n\n以下是 ${feedbacks.length} 条玩家反馈数据，请分析并生成 ToDo 列表：\n\n${feedbackText}${existingTodosContext}`,
                             },
                         ],
                     },
@@ -207,6 +231,7 @@ export async function POST(request: NextRequest) {
             description: todo.description || null,
             priority: ['high', 'medium', 'low'].includes(todo.priority) ? todo.priority : 'medium',
             status: 'todo',
+            keywords: Array.isArray(todo.keywords) ? todo.keywords : [],
             batch_time_start: startTime || null,
             batch_time_end: endTime || new Date().toISOString(),
         }));
@@ -224,10 +249,39 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Handle reopens: mark done todos as reopened
+        let reopenCount = 0;
+        if (Array.isArray(parsed.reopens)) {
+            for (const reopen of parsed.reopens) {
+                if (reopen.original_todo_id) {
+                    try {
+                        // Fetch existing todo to get current reopen_count
+                        const { data: existing } = await supabase
+                            .from('baiyezhan_todos')
+                            .select('reopen_count, status')
+                            .eq('id', reopen.original_todo_id)
+                            .eq('baiye_id', baiye_id)
+                            .single();
+                        if (existing && existing.status === 'done') {
+                            await supabase
+                                .from('baiyezhan_todos')
+                                .update({
+                                    status: 'todo',
+                                    reopen_count: (existing.reopen_count || 0) + 1,
+                                })
+                                .eq('id', reopen.original_todo_id);
+                            reopenCount++;
+                        }
+                    } catch { /* ignore individual reopen errors */ }
+                }
+            }
+        }
+
         return NextResponse.json({
             success: true,
             feedback_count: feedbacks.length,
             todos: insertedTodos,
+            reopened_count: reopenCount,
         });
     } catch (error: unknown) {
         console.error('Summarize Error:', error);
