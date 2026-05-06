@@ -139,60 +139,93 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
         const [customPopup, setCustomPopup] = useState<CustomPopupState | null>(null);
         const [editingMember, setEditingMember] = useState<{ si: number; mi: number; value: string } | null>(null);
 
-        /* ── Member row drag-reorder state ── */
-        const [rowDrag, setRowDrag] = useState<{ si: number; mi: number } | null>(null);
-        const [rowDropTarget, setRowDropTarget] = useState<{ si: number; mi: number; half: "top" | "bottom" } | null>(null);
+        /* ── Member name swap drag state ── */
+        const [nameDrag, setNameDrag] = useState<{ si: number; mi: number } | null>(null);
+        const [nameDropTarget, setNameDropTarget] = useState<{ si: number; mi: number } | null>(null);
 
-        const handleRowDragStart = useCallback((e: React.DragEvent, si: number, mi: number) => {
+        /** Start dragging a member name for swap */
+        const handleNameDragStart = useCallback((e: React.DragEvent, si: number, mi: number) => {
             if (!isAdmin) return;
+            const memberName = squads[si].members[mi].name;
+            if (!memberName) return; // Can't drag empty slots
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/roster-row", JSON.stringify({ si, mi }));
-            setRowDrag({ si, mi });
-        }, [isAdmin]);
+            e.dataTransfer.setData("application/roster-name-swap", JSON.stringify({ si, mi }));
+            // Also set text/plain so player pool drop zones can accept it
+            e.dataTransfer.setData("text/plain", memberName);
+            setNameDrag({ si, mi });
+        }, [isAdmin, squads]);
 
-        const handleRowDragOver = useCallback((e: React.DragEvent, si: number, mi: number) => {
-            if (!isAdmin || !e.dataTransfer.types.includes("application/roster-row")) return;
+        /** Drag over a member row — highlight as swap target */
+        const handleNameDragOver = useCallback((e: React.DragEvent, si: number, mi: number) => {
+            if (!isAdmin) return;
+            // Accept name-swap drags and player pool drags (text/plain)
+            const isNameSwap = e.dataTransfer.types.includes("application/roster-name-swap");
+            const isPoolDrag = e.dataTransfer.types.includes("text/plain");
+            if (!isNameSwap && !isPoolDrag) return;
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = "move";
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const half = (e.clientY - rect.top) < rect.height / 2 ? "top" : "bottom";
-            setRowDropTarget((prev) => {
-                if (prev?.si === si && prev?.mi === mi && prev?.half === half) return prev;
-                return { si, mi, half };
+            setNameDropTarget((prev) => {
+                if (prev?.si === si && prev?.mi === mi) return prev;
+                return { si, mi };
             });
         }, [isAdmin]);
 
-        const handleRowDrop = useCallback((e: React.DragEvent, targetSi: number, targetMi: number) => {
+        /** Drop on a member row — swap names only, keep cells in place */
+        const handleNameDrop = useCallback((e: React.DragEvent, targetSi: number, targetMi: number) => {
             e.preventDefault();
             e.stopPropagation();
-            const dropHalf = rowDropTarget?.half || "bottom";
-            setRowDrag(null);
-            setRowDropTarget(null);
+            setNameDrag(null);
+            setNameDropTarget(null);
             if (!isAdmin) return;
-            try {
-                const data = JSON.parse(e.dataTransfer.getData("application/roster-row"));
-                const { si: srcSi, mi: srcMi } = data as { si: number; mi: number };
-                const insertIdx = dropHalf === "bottom" ? targetMi + 1 : targetMi;
-                if (srcSi === targetSi && (srcMi === insertIdx || srcMi === insertIdx - 1)) return;
-                const next = deepClone(squads);
-                if (srcSi === targetSi) {
-                    const arr = next[srcSi].members;
-                    const [moved] = arr.splice(srcMi, 1);
-                    const finalIdx = insertIdx > srcMi ? insertIdx - 1 : insertIdx;
-                    arr.splice(finalIdx, 0, moved);
-                } else {
-                    if (next[targetSi].members.length >= MAX_SQUAD_SIZE) return;
-                    const [moved] = next[srcSi].members.splice(srcMi, 1);
-                    next[targetSi].members.splice(insertIdx, 0, moved);
-                }
-                onSquadsChange(next);
-            } catch { /* ignore invalid drag data */ }
-        }, [isAdmin, squads, onSquadsChange, rowDropTarget]);
 
-        const handleRowDragEnd = useCallback(() => {
-            setRowDrag(null);
-            setRowDropTarget(null);
+            // Case 1: Name swap between two existing rows
+            if (e.dataTransfer.types.includes("application/roster-name-swap")) {
+                try {
+                    const data = JSON.parse(e.dataTransfer.getData("application/roster-name-swap"));
+                    const { si: srcSi, mi: srcMi } = data as { si: number; mi: number };
+                    if (srcSi === targetSi && srcMi === targetMi) return; // Same cell
+                    const next = deepClone(squads);
+                    const srcMember = next[srcSi].members[srcMi];
+                    const tgtMember = next[targetSi].members[targetMi];
+                    // Swap only names and isLeader, keep cells in place
+                    const tmpName = srcMember.name;
+                    const tmpLeader = srcMember.isLeader;
+                    srcMember.name = tgtMember.name;
+                    srcMember.isLeader = tgtMember.isLeader;
+                    tgtMember.name = tmpName;
+                    tgtMember.isLeader = tmpLeader;
+                    onSquadsChange(next);
+                } catch { /* ignore */ }
+                return;
+            }
+
+            // Case 2: Drop from player pool onto an existing row (replace empty name or fill slot)
+            const name = e.dataTransfer.getData("text/plain");
+            if (!name) return;
+            const targetMember = squads[targetSi].members[targetMi];
+            if (targetMember.name === name) return; // Already this person
+            // Check global uniqueness — auto-relocate if needed
+            if (globalAssignedNames.has(name)) {
+                const inThisSection = squads.some((sq) => sq.members.some((m) => m.name === name));
+                if (!inThisSection) return;
+            }
+            const next = deepClone(squads);
+            // Remove from old position in this section if exists
+            for (const sq of next) {
+                const idx = sq.members.findIndex((m) => m.name === name);
+                if (idx !== -1) {
+                    sq.members[idx].name = ""; // Clear old slot
+                    break;
+                }
+            }
+            next[targetSi].members[targetMi].name = name;
+            onSquadsChange(next);
+        }, [isAdmin, squads, onSquadsChange, globalAssignedNames]);
+
+        const handleNameDragEnd = useCallback(() => {
+            setNameDrag(null);
+            setNameDropTarget(null);
         }, []);
 
         const updateCell = (si: number, mi: number, ci: number, text: string, color?: string | null) => {
@@ -202,21 +235,33 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
         };
 
         const addMember = (si: number, name: string) => {
-            if (squads[si].members.length >= MAX_SQUAD_SIZE) return;
             if (globalAssignedNames.has(name)) {
                 const inThisSection = squads.some((sq) => sq.members.some((m) => m.name === name));
                 if (!inThisSection) return;
             }
             const next = deepClone(squads);
             if (next[si].members.some((m: any) => m.name === name)) return;
+
+            // First try to fill an empty-name slot in this squad
+            const emptyIdx = next[si].members.findIndex((m) => !m.name);
+            if (emptyIdx !== -1) {
+                next[si].members[emptyIdx].name = name;
+                onSquadsChange(next);
+                return;
+            }
+
+            // Otherwise append if not full
+            if (next[si].members.length >= MAX_SQUAD_SIZE) return;
             const emptyCells: RosterCell[] = columns.map(() => ({ text: "", color: null }));
             next[si].members.push({ name, isLeader: next[si].members.length === 0, cells: emptyCells });
             onSquadsChange(next);
         };
 
+        /** Remove member: only clear the name, keep cells data intact */
         const removeMember = (si: number, mi: number) => {
             const next = deepClone(squads);
-            next[si].members.splice(mi, 1);
+            next[si].members[mi].name = "";
+            next[si].members[mi].isLeader = false;
             onSquadsChange(next);
         };
 
@@ -235,7 +280,9 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
 
         const handleSquadDragOver = (e: React.DragEvent, si: number) => {
             if (!isAdmin) return;
-            if (squads[si].members.length >= MAX_SQUAD_SIZE) return;
+            // Allow drop if squad has empty-name slots or is not full
+            const hasEmptySlot = squads[si].members.some((m) => !m.name);
+            if (!hasEmptySlot && squads[si].members.length >= MAX_SQUAD_SIZE) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
             setDragOverSquad(si);
@@ -244,6 +291,8 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
         const handleSquadDrop = (e: React.DragEvent, si: number) => {
             e.preventDefault(); setDragOverSquad(null);
             if (!isAdmin) return;
+            // Ignore name-swap drops (those are handled by row-level drop)
+            if (e.dataTransfer.types.includes("application/roster-name-swap")) return;
             const name = e.dataTransfer.getData("text/plain");
             if (name) addMember(si, name);
         };
@@ -356,36 +405,35 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                     </thead>
                                     <tbody onDragOver={(e) => handleSquadDragOver(e, si)} onDragLeave={handleSquadDragLeave} onDrop={(e) => handleSquadDrop(e, si)}>
                                         {squad.members.map((member, mi) => {
-                                            const isDragging = rowDrag?.si === si && rowDrag?.mi === mi;
-                                            const isDropTop = rowDropTarget?.si === si && rowDropTarget?.mi === mi && rowDropTarget?.half === "top";
-                                            const isDropBottom = rowDropTarget?.si === si && rowDropTarget?.mi === mi && rowDropTarget?.half === "bottom";
-                                            const lineColor = accent.badge;
-                                            const dropStyle: React.CSSProperties = isDropTop
-                                                ? { boxShadow: `0 -2.5px 0 0 ${lineColor}`, position: "relative" }
-                                                : isDropBottom
-                                                ? { boxShadow: `0 2.5px 0 0 ${lineColor}`, position: "relative" }
+                                            const isDragging = nameDrag?.si === si && nameDrag?.mi === mi;
+                                            const isSwapTarget = nameDropTarget?.si === si && nameDropTarget?.mi === mi;
+                                            const isEmpty = !member.name;
+                                            const swapStyle: React.CSSProperties = isSwapTarget
+                                                ? { boxShadow: `inset 0 0 0 2px ${accent.badge}`, background: `${accent.bg}` }
                                                 : {};
                                             return (
                                             <tr key={mi}
-                                                draggable={isAdmin}
-                                                onDragStart={(e) => handleRowDragStart(e, si, mi)}
-                                                onDragOver={(e) => handleRowDragOver(e, si, mi)}
-                                                onDrop={(e) => handleRowDrop(e, si, mi)}
-                                                onDragEnd={handleRowDragEnd}
-                                                className={`transition-all duration-150 ${isDragging ? "opacity-30 scale-[0.97]" : (isDropTop || isDropBottom) ? "bg-blue-50/50" : "hover:bg-blue-50/30"}`}
-                                                style={dropStyle}>
+                                                draggable={isAdmin && !!member.name}
+                                                onDragStart={(e) => handleNameDragStart(e, si, mi)}
+                                                onDragOver={(e) => handleNameDragOver(e, si, mi)}
+                                                onDrop={(e) => handleNameDrop(e, si, mi)}
+                                                onDragEnd={handleNameDragEnd}
+                                                className={`transition-all duration-150 ${isDragging ? "opacity-30 scale-[0.97]" : isSwapTarget ? "" : isEmpty ? "" : "hover:bg-blue-50/30"}`}
+                                                style={swapStyle}>
                                                 <td className="border border-neutral-300 px-2 py-1.5 font-bold text-[11px]"
                                                     style={{
-                                                        backgroundColor: member.isLeader ? accent.light : "#fff",
-                                                        color: "#000",
+                                                        backgroundColor: isEmpty ? "#f9f9f9" : member.isLeader ? accent.light : "#fff",
+                                                        color: isEmpty ? "#999" : "#000",
                                                         whiteSpace: "nowrap",
                                                         overflow: "hidden",
                                                         textOverflow: "ellipsis",
                                                     }}>
                                                     <div className="flex items-center gap-1">
-                                                        {isAdmin && <span className="cursor-grab active:cursor-grabbing text-[10px] text-neutral-300 hover:text-neutral-500 select-none" data-no-export>⠿</span>}
-                                                        {member.isLeader && <span className="text-[9px] font-bold" style={{ color: accent.badge }}>★</span>}
-                                                        {editingMember?.si === si && editingMember?.mi === mi ? (
+                                                        {isAdmin && !isEmpty && <span className="cursor-grab active:cursor-grabbing text-[10px] text-neutral-300 hover:text-neutral-500 select-none" data-no-export>⠿</span>}
+                                                        {!isEmpty && member.isLeader && <span className="text-[9px] font-bold" style={{ color: accent.badge }}>★</span>}
+                                                        {isEmpty ? (
+                                                            <span className="text-[10px] italic text-neutral-400 select-none">空位 · 拖入成员</span>
+                                                        ) : editingMember?.si === si && editingMember?.mi === mi ? (
                                                             <input
                                                                 autoFocus
                                                                 value={editingMember.value}
@@ -413,9 +461,9 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                                 title={isAdmin ? "双击改名" : member.name}
                                                             >{member.name}</span>
                                                         )}
-                                                        {isAdmin && (
+                                                        {isAdmin && !isEmpty && (
                                                             <button onClick={() => removeMember(si, mi)}
-                                                                className="text-[9px] text-neutral-400 hover:text-red-500 ml-auto shrink-0" title="移除" data-no-export>✕</button>
+                                                                className="text-[9px] text-neutral-400 hover:text-red-500 ml-auto shrink-0" title="清除成员(保留位置数据)" data-no-export>✕</button>
                                                         )}
                                                     </div>
                                                 </td>
@@ -472,9 +520,13 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                             );
                                         })}
                                         {/* Drag zone + add member dropdown */}
-                                        {isAdmin && !isFull && (() => {
-                                            const sectionAssigned = new Set(squads.flatMap((sq) => sq.members.map((m) => m.name)));
+                                        {isAdmin && (() => {
+                                            const hasEmptySlot = squad.members.some((m) => !m.name);
+                                            const canAddNew = squad.members.length < MAX_SQUAD_SIZE;
+                                            if (!hasEmptySlot && !canAddNew) return null;
+                                            const sectionAssigned = new Set(squads.flatMap((sq) => sq.members.map((m) => m.name)).filter(Boolean));
                                             const unassigned = availableMembers.filter((n) => !sectionAssigned.has(n));
+                                            const filledCount = squad.members.filter((m) => !!m.name).length;
                                             return (
                                             <tr data-no-export>
                                                 <td colSpan={columns.length + 1}
@@ -487,7 +539,7 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                         {dragOverSquad === si
                                                             ? <span className="font-bold">📥 放下添加成员</span>
                                                             : <>
-                                                                <span className="text-neutral-400">拖拽或选择添加 ({squad.members.length}/{MAX_SQUAD_SIZE})</span>
+                                                                <span className="text-neutral-400">拖拽或选择添加 ({filledCount}/{MAX_SQUAD_SIZE})</span>
                                                                 {unassigned.length > 0 && (
                                                                     <select
                                                                         value=""

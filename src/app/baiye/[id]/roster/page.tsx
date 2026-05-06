@@ -90,8 +90,8 @@ export default function RosterPage() {
     const isAdmin = user?.role === "admin" || user?.role === "vip";
 
     // Computed assigned sets
-    const attackAssigned = rosterData.attack.flatMap((sq) => sq.members.map((m) => m.name));
-    const defenseAssigned = rosterData.defense.flatMap((sq) => sq.members.map((m) => m.name));
+    const attackAssigned = rosterData.attack.flatMap((sq) => sq.members.map((m) => m.name)).filter(Boolean);
+    const defenseAssigned = rosterData.defense.flatMap((sq) => sq.members.map((m) => m.name)).filter(Boolean);
     const globalAssigned = new Set([...attackAssigned, ...defenseAssigned]);
     const wallAssigned = new Set(
         Array.isArray(rosterData.wall)
