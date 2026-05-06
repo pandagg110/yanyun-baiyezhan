@@ -17,6 +17,8 @@ interface RosterTableProps {
     onAddOption?: (label: string, color?: string, category?: string) => void;
     onRenameMember?: (oldName: string, newName: string) => void;
     headerColor?: string;
+    sectionKey?: string;
+    onCrossSectionSwap?: (fromSection: string, fromSi: number, fromMi: number, toSi: number, toMi: number) => void;
 }
 
 const MAX_SQUAD_SIZE = 5;
@@ -130,7 +132,7 @@ function CustomOptionPopup({ onSave, onCancel }: {
 
 export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
     function RosterTable(
-        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, onAddOption, onRenameMember, headerColor = "#e8d44d" },
+        { title, emoji, columns, squads, isAdmin, options, availableMembers, globalAssignedNames, onColumnsChange, onSquadsChange, onAddOption, onRenameMember, headerColor = "#e8d44d", sectionKey, onCrossSectionSwap },
         ref
     ) {
         const [editingCol, setEditingCol] = useState<number | null>(null);
@@ -149,11 +151,11 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
             const memberName = squads[si].members[mi].name;
             if (!memberName) return; // Can't drag empty slots
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/roster-name-swap", JSON.stringify({ si, mi }));
+            e.dataTransfer.setData("application/roster-name-swap", JSON.stringify({ section: sectionKey || "", si, mi }));
             // Also set text/plain so player pool drop zones can accept it
             e.dataTransfer.setData("text/plain", memberName);
             setNameDrag({ si, mi });
-        }, [isAdmin, squads]);
+        }, [isAdmin, squads, sectionKey]);
 
         /** Drag over a member row — highlight as swap target */
         const handleNameDragOver = useCallback((e: React.DragEvent, si: number, mi: number) => {
@@ -179,11 +181,21 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
             setNameDropTarget(null);
             if (!isAdmin) return;
 
-            // Case 1: Name swap between two existing rows
+            // Case 1: Name swap between rows (same section or cross-section)
             if (e.dataTransfer.types.includes("application/roster-name-swap")) {
                 try {
                     const data = JSON.parse(e.dataTransfer.getData("application/roster-name-swap"));
-                    const { si: srcSi, mi: srcMi } = data as { si: number; mi: number };
+                    const { section: srcSection, si: srcSi, mi: srcMi } = data as { section: string; si: number; mi: number };
+
+                    // Cross-section swap (e.g. attack ↔ defense)
+                    if (srcSection && sectionKey && srcSection !== sectionKey) {
+                        if (onCrossSectionSwap) {
+                            onCrossSectionSwap(srcSection, srcSi, srcMi, targetSi, targetMi);
+                        }
+                        return;
+                    }
+
+                    // Same-section swap
                     if (srcSi === targetSi && srcMi === targetMi) return; // Same cell
                     const next = deepClone(squads);
                     const srcMember = next[srcSi].members[srcMi];
@@ -221,7 +233,7 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
             }
             next[targetSi].members[targetMi].name = name;
             onSquadsChange(next);
-        }, [isAdmin, squads, onSquadsChange, globalAssignedNames]);
+        }, [isAdmin, squads, onSquadsChange, globalAssignedNames, sectionKey, onCrossSectionSwap]);
 
         const handleNameDragEnd = useCallback(() => {
             setNameDrag(null);
@@ -333,9 +345,9 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                         const leaderName = squad.members.find((m) => m.isLeader)?.name || "";
                         const isFull = squad.members.length >= MAX_SQUAD_SIZE;
                         return (
-                            <div key={si} className="mb-5" style={{ borderRadius: 6, border: `2px solid ${accent.border}33` }}>
+                            <div key={si} className="mb-2" style={{ borderRadius: 6, border: `2px solid ${accent.border}33` }}>
                                 {/* Squad header bar */}
-                                <div className="flex items-center justify-between px-3 py-2" style={{ background: `linear-gradient(135deg, ${accent.bg}, ${accent.light})`, borderBottom: `2px solid ${accent.border}44`, borderRadius: "4px 4px 0 0" }}>
+                                <div className="flex items-center justify-between px-3 py-1" style={{ background: `linear-gradient(135deg, ${accent.bg}, ${accent.light})`, borderBottom: `2px solid ${accent.border}44`, borderRadius: "4px 4px 0 0" }}>
                                     <div className="flex items-center gap-2">
                                         <span className="inline-flex items-center justify-center text-white font-black text-[11px] rounded"
                                             style={{ backgroundColor: accent.badge, width: 22, height: 22, lineHeight: "22px" }}>

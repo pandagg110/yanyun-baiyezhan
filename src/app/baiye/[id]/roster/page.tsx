@@ -80,7 +80,7 @@ export default function RosterPage() {
     const [rosterName, setRosterName] = useState("排表");
     const [rosterDate, setRosterDate] = useState(todayStr());
     const [hasChanges, setHasChanges] = useState(false);
-    const [activeTab, setActiveTab] = useState<SectionTab>("attack");
+    const [collapsedSections, setCollapsedSections] = useState<Set<SectionTab>>(new Set());
     const [showHistory, setShowHistory] = useState(false);
 
     const attackRef = useRef<HTMLDivElement>(null);
@@ -388,11 +388,39 @@ export default function RosterPage() {
 
     const memberNames = members.map((m) => m.name);
 
-    const TAB_CONFIG: { key: SectionTab; label: string; emoji: string; color: string }[] = [
-        { key: "attack", label: "进攻", emoji: "⚔️", color: "from-red-600 to-orange-600" },
-        { key: "defense", label: "防守", emoji: "🛡️", color: "from-blue-600 to-cyan-600" },
-        { key: "wall", label: "人墙", emoji: "🧱", color: "from-purple-600 to-pink-600" },
+    const SECTION_CONFIG: { key: SectionTab; label: string; emoji: string; gradient: string; borderColor: string; textColor: string }[] = [
+        { key: "attack", label: "进攻", emoji: "⚔️", gradient: "from-red-600 to-orange-600", borderColor: "border-red-500/40", textColor: "text-red-400" },
+        { key: "defense", label: "防守", emoji: "🛡️", gradient: "from-blue-600 to-cyan-600", borderColor: "border-blue-500/40", textColor: "text-blue-400" },
+        { key: "wall", label: "人墙", emoji: "🧱", gradient: "from-purple-600 to-pink-600", borderColor: "border-purple-500/40", textColor: "text-purple-400" },
     ];
+
+    const toggleSection = (key: SectionTab) => {
+        setCollapsedSections((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+    };
+
+    /** Cross-section name swap (e.g. drag from attack to defense or vice versa) */
+    const handleCrossSectionSwap = (fromSection: string, fromSi: number, fromMi: number, toSi: number, toMi: number) => {
+        const fromKey = fromSection as "attack" | "defense";
+        const toKey = fromKey === "attack" ? "defense" : "attack";
+        const srcSquads = JSON.parse(JSON.stringify(fromKey === "attack" ? rosterData.attack : rosterData.defense)) as RosterSquad[];
+        const tgtSquads = JSON.parse(JSON.stringify(toKey === "attack" ? rosterData.attack : rosterData.defense)) as RosterSquad[];
+        const srcMember = srcSquads[fromSi]?.members[fromMi];
+        const tgtMember = tgtSquads[toSi]?.members[toMi];
+        if (!srcMember || !tgtMember) return;
+        // Swap only names and isLeader
+        const tmpName = srcMember.name;
+        const tmpLeader = srcMember.isLeader;
+        srcMember.name = tgtMember.name;
+        srcMember.isLeader = tgtMember.isLeader;
+        tgtMember.name = tmpName;
+        tgtMember.isLeader = tmpLeader;
+        setRosterData((prev) => ({ ...prev, [fromKey]: srcSquads, [toKey]: tgtSquads }));
+        setHasChanges(true);
+    };
 
     // Format date as MM-DD
     const dateMMDD = rosterDate ? (() => { const parts = rosterDate.split("-"); return parts.length >= 3 ? `${parts[1]}-${parts[2]}` : rosterDate; })() : "";
@@ -416,34 +444,34 @@ export default function RosterPage() {
                             className="bg-neutral-800 border-2 border-neutral-700 px-2 py-1 text-xs text-white focus:border-yellow-500 outline-none" />
                         {hasChanges && <span className="text-[10px] text-yellow-500 animate-pulse">● 未保存</span>}
                         {isAdmin && <PixelButton size="sm" onClick={handleSave} isLoading={saving}>💾 保存</PixelButton>}
-                        <button onClick={() => handleExport(activeTab)} className="px-2 py-1 text-xs font-bold border-2 border-green-700 bg-green-600 text-white hover:bg-green-500">📷 导出</button>
                     </div>
                 </div>
             </header>
 
-            <div className="max-w-7xl mx-auto p-4">
-                <div className="flex flex-col lg:flex-row gap-4">
-                    <div className="w-full lg:w-48 shrink-0 space-y-3">
-                        <div className="lg:sticky lg:top-20 space-y-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+            <div className="mx-auto p-2" style={{ maxWidth: "1920px" }}>
+                <div className="flex flex-col xl:flex-row gap-2">
+                    {/* ── Left Sidebar: History + Player Pool + Options ── */}
+                    <div className="w-full xl:w-40 shrink-0 space-y-2">
+                        <div className="xl:sticky xl:top-16 space-y-2 xl:max-h-[calc(100vh-5rem)] xl:overflow-y-auto">
                             {/* History */}
                             <PixelCard className="bg-neutral-800">
                                 <button onClick={() => setShowHistory(!showHistory)}
-                                    className="w-full text-left text-sm font-bold text-yellow-400 uppercase flex justify-between items-center">
-                                    <span>📅 历史排表</span>
+                                    className="w-full text-left text-xs font-bold text-yellow-400 uppercase flex justify-between items-center">
+                                    <span>📅 历史</span>
                                     <span className="text-[10px] text-neutral-600">{showHistory ? "▼" : "▶"} {rosters.length}</span>
                                 </button>
                                 {showHistory && (
-                                    <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto">
+                                    <div className="mt-2 space-y-1 max-h-[160px] overflow-y-auto">
                                         {isAdmin && (
                                             <button onClick={handleNew}
-                                                className="w-full px-2 py-1.5 text-[10px] font-bold border-2 border-dashed border-neutral-600 text-neutral-400 hover:text-white hover:border-yellow-500">
-                                                ＋ 新建空白
+                                                className="w-full px-2 py-1 text-[10px] font-bold border-2 border-dashed border-neutral-600 text-neutral-400 hover:text-white hover:border-yellow-500">
+                                                ＋ 新建
                                             </button>
                                         )}
                                         {rosters.map((r) => (
                                             <div key={r.id} className="group relative">
                                                 <button onClick={() => loadRoster(r)}
-                                                    className={`w-full px-2 py-1.5 text-left text-[11px] border-2 transition-colors ${
+                                                    className={`w-full px-2 py-1 text-left text-[10px] border-2 transition-colors ${
                                                         currentRosterId === r.id ? "border-yellow-500 bg-yellow-500/10 text-yellow-400" : "border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500"
                                                     }`}>
                                                     <div className="font-bold">{r.roster_date}</div>
@@ -452,14 +480,14 @@ export default function RosterPage() {
                                                 {isAdmin && (
                                                     <button
                                                         onClick={(e) => handleDeleteRoster(r.id, e)}
-                                                        className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-[10px] text-neutral-600 hover:text-red-400 hover:bg-red-400/10 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                                        className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] text-neutral-600 hover:text-red-400 hover:bg-red-400/10 rounded opacity-0 group-hover:opacity-100 transition-all"
                                                         title="删除此排表">
                                                         ✕
                                                     </button>
                                                 )}
                                             </div>
                                         ))}
-                                        {rosters.length === 0 && <div className="text-[10px] text-neutral-600 text-center py-2">暂无</div>}
+                                        {rosters.length === 0 && <div className="text-[10px] text-neutral-600 text-center py-1">暂无</div>}
                                     </div>
                                 )}
                             </PixelCard>
@@ -480,40 +508,105 @@ export default function RosterPage() {
                         </div>
                     </div>
 
-                    <div className="flex-1 min-w-0 space-y-4">
-                        <div className="flex gap-1.5" style={{ transition: "all 0.3s ease" }}>
-                            {TAB_CONFIG.map((t) => {
-                                const isActive = activeTab === t.key;
+                    {/* ── Main Content ── */}
+                    <div className="flex-1 min-w-0 space-y-2">
+                        {/* Row 1: Attack (left) + Defense (right) — side by side */}
+                        <div className="flex flex-col xl:flex-row gap-2">
+                            {/* Attack Section */}
+                            {(() => {
+                                const s = SECTION_CONFIG[0];
+                                const isCollapsed = collapsedSections.has(s.key);
                                 return (
-                                    <button key={t.key} onClick={() => setActiveTab(t.key)}
-                                        style={{ flex: isActive ? 5 : 1, transition: "flex 0.3s ease" }}
-                                        className={`py-2.5 font-bold border-4 border-black shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[1px] active:translate-y-[1px] whitespace-nowrap overflow-hidden ${
-                                            isActive ? `bg-gradient-to-r ${t.color} text-white text-base` : "bg-neutral-800 text-neutral-500 hover:text-white text-xs"
-                                        }`}>
-                                        {isActive
-                                            ? <>{t.emoji} {t.label} <span className="ml-1 text-sm opacity-80">{dateMMDD}</span></>
-                                            : <>{t.emoji}<span className="hidden sm:inline"> {t.label}</span></>}
-                                    </button>
+                                    <div className={`flex-1 min-w-0 border-2 ${s.borderColor} rounded overflow-hidden`}>
+                                        <div
+                                            className={`flex items-center justify-between px-2 py-1 cursor-pointer select-none bg-gradient-to-r ${s.gradient}`}
+                                            onClick={() => toggleSection(s.key)}
+                                        >
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-white text-xs">{isCollapsed ? "▶" : "▼"}</span>
+                                                <span className="text-white font-bold text-xs">{s.emoji} {s.label}</span>
+                                                <span className="text-white/60 text-[10px]">{dateMMDD}</span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleExport(s.key); }}
+                                                className="px-1.5 py-0.5 text-[9px] font-bold border border-white/30 text-white/80 rounded hover:bg-white/20 transition-colors"
+                                            >📷</button>
+                                        </div>
+                                        {!isCollapsed && (
+                                            <div className="overflow-x-auto">
+                                                <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.attackColumns || rosterData.columns} squads={rosterData.attack}
+                                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
+                                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#fdd"
+                                                    sectionKey="attack" onCrossSectionSwap={handleCrossSectionSwap} />
+                                            </div>
+                                        )}
+                                    </div>
                                 );
-                            })}
+                            })()}
+
+                            {/* Defense Section */}
+                            {(() => {
+                                const s = SECTION_CONFIG[1];
+                                const isCollapsed = collapsedSections.has(s.key);
+                                return (
+                                    <div className={`flex-1 min-w-0 border-2 ${s.borderColor} rounded overflow-hidden`}>
+                                        <div
+                                            className={`flex items-center justify-between px-2 py-1 cursor-pointer select-none bg-gradient-to-r ${s.gradient}`}
+                                            onClick={() => toggleSection(s.key)}
+                                        >
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-white text-xs">{isCollapsed ? "▶" : "▼"}</span>
+                                                <span className="text-white font-bold text-xs">{s.emoji} {s.label}</span>
+                                                <span className="text-white/60 text-[10px]">{dateMMDD}</span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleExport(s.key); }}
+                                                className="px-1.5 py-0.5 text-[9px] font-bold border border-white/30 text-white/80 rounded hover:bg-white/20 transition-colors"
+                                            >📷</button>
+                                        </div>
+                                        {!isCollapsed && (
+                                            <div className="overflow-x-auto">
+                                                <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
+                                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
+                                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#ddf"
+                                                    sectionKey="defense" onCrossSectionSwap={handleCrossSectionSwap} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
-                        <div className="overflow-x-auto">
-                            <div style={{ display: activeTab === "attack" ? "block" : "none" }}>
-                                <RosterTable ref={attackRef} title="进攻" emoji="⚔️" columns={rosterData.attackColumns || rosterData.columns} squads={rosterData.attack}
-                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleAttackColumnsChange} onSquadsChange={handleSquadsChange("attack")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#fdd" />
-                            </div>
-                            <div style={{ display: activeTab === "defense" ? "block" : "none" }}>
-                                <RosterTable ref={defenseRef} title="防守" emoji="🛡️" columns={rosterData.columns} squads={rosterData.defense}
-                                    isAdmin={isAdmin} options={options} availableMembers={memberNames} globalAssignedNames={globalAssigned}
-                                    onColumnsChange={handleDefenseColumnsChange} onSquadsChange={handleSquadsChange("defense")} onAddOption={handleAddOption} onRenameMember={handleRosterRenameMember} headerColor="#ddf" />
-                            </div>
-                            <div style={{ display: activeTab === "wall" ? "block" : "none" }}>
-                                <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}
-                                    availableMembers={memberNames} wallAssignedNames={wallAssigned} globalAssignedNames={globalAssigned}
-                                    onTowersChange={handleWallChange} />
-                            </div>
-                        </div>
+
+                        {/* Row 2: Wall (full width below) */}
+                        {(() => {
+                            const s = SECTION_CONFIG[2];
+                            const isCollapsed = collapsedSections.has(s.key);
+                            return (
+                                <div className={`border-2 ${s.borderColor} rounded overflow-hidden`}>
+                                    <div
+                                        className={`flex items-center justify-between px-2 py-1 cursor-pointer select-none bg-gradient-to-r ${s.gradient}`}
+                                        onClick={() => toggleSection(s.key)}
+                                    >
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-white text-xs">{isCollapsed ? "▶" : "▼"}</span>
+                                            <span className="text-white font-bold text-xs">{s.emoji} {s.label}</span>
+                                            <span className="text-white/60 text-[10px]">{dateMMDD}</span>
+                                        </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleExport(s.key); }}
+                                            className="px-1.5 py-0.5 text-[9px] font-bold border border-white/30 text-white/80 rounded hover:bg-white/20 transition-colors"
+                                        >📷</button>
+                                    </div>
+                                    {!isCollapsed && (
+                                        <div className="overflow-x-auto">
+                                            <RosterWall ref={wallRef} towers={rosterData.wall} isAdmin={isAdmin}
+                                                availableMembers={memberNames} wallAssignedNames={wallAssigned} globalAssignedNames={globalAssigned}
+                                                onTowersChange={handleWallChange} />
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
