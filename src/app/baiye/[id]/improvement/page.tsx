@@ -40,7 +40,7 @@ export default function ImprovementPage() {
     const isAdmin = user?.role === 'admin';
 
     return (
-        <main className="min-h-screen bg-neutral-900 text-white">
+        <main className="min-h-screen bg-neutral-900 text-white overflow-x-hidden">
             {/* Header */}
             <header className="sticky top-0 z-30 bg-neutral-900/95 backdrop-blur-sm border-b-4 border-black">
                 <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-3 flex justify-between items-center">
@@ -115,7 +115,7 @@ export default function ImprovementPage() {
                         />
                     </div>
 
-                    {/* Right Column: AI Panel + Match Insights */}
+                    {/* Right Column: AI Panel + Todo Details */}
                     <div className="w-full xl:w-80 shrink-0">
                         {isAdmin ? (
                             <ImprovementAiPanel
@@ -148,6 +148,9 @@ export default function ImprovementPage() {
                             ) : (
                                 <div className="border border-dashed border-neutral-700 text-neutral-600 text-xs text-center py-12 px-4">
                                     ← 点击看板中的计划卡片查看详情
+                                    <div className="mt-3 text-[10px] text-neutral-700">
+                                        💡 点击右下角 🤖 打开 AI 助手
+                                    </div>
                                 </div>
                             )
                         )}

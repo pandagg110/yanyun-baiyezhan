@@ -144,6 +144,15 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
         /* ── Member name swap drag state ── */
         const [nameDrag, setNameDrag] = useState<{ si: number; mi: number } | null>(null);
         const [nameDropTarget, setNameDropTarget] = useState<{ si: number; mi: number } | null>(null);
+        const [dragSourceName, setDragSourceName] = useState<string>("");
+        const [swapFlash, setSwapFlash] = useState<{ cells: string[]; ts: number }>({ cells: [], ts: 0 });
+
+        // Auto-clear swap flash after animation
+        useEffect(() => {
+            if (swapFlash.cells.length === 0) return;
+            const timer = setTimeout(() => setSwapFlash({ cells: [], ts: 0 }), 1200);
+            return () => clearTimeout(timer);
+        }, [swapFlash.ts]);
 
         /** Start dragging a member name for swap */
         const handleNameDragStart = useCallback((e: React.DragEvent, si: number, mi: number) => {
@@ -155,6 +164,7 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
             // Also set text/plain so player pool drop zones can accept it
             e.dataTransfer.setData("text/plain", memberName);
             setNameDrag({ si, mi });
+            setDragSourceName(memberName);
         }, [isAdmin, squads, sectionKey]);
 
         /** Drag over a member row — highlight as swap target */
@@ -191,6 +201,8 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                     if (srcSection && sectionKey && srcSection !== sectionKey) {
                         if (onCrossSectionSwap) {
                             onCrossSectionSwap(srcSection, srcSi, srcMi, targetSi, targetMi);
+                            // Flash the target cell
+                            setSwapFlash({ cells: [`${targetSi}-${targetMi}`], ts: Date.now() });
                         }
                         return;
                     }
@@ -200,7 +212,6 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                     const next = deepClone(squads);
                     const srcMember = next[srcSi].members[srcMi];
                     const tgtMember = next[targetSi].members[targetMi];
-                    // Swap only names and isLeader, keep cells in place
                     const tmpName = srcMember.name;
                     const tmpLeader = srcMember.isLeader;
                     srcMember.name = tgtMember.name;
@@ -208,6 +219,8 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                     tgtMember.name = tmpName;
                     tgtMember.isLeader = tmpLeader;
                     onSquadsChange(next);
+                    // Flash both swapped cells
+                    setSwapFlash({ cells: [`${srcSi}-${srcMi}`, `${targetSi}-${targetMi}`], ts: Date.now() });
                 } catch { /* ignore */ }
                 return;
             }
@@ -238,6 +251,7 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
         const handleNameDragEnd = useCallback(() => {
             setNameDrag(null);
             setNameDropTarget(null);
+            setDragSourceName("");
         }, []);
 
         const updateCell = (si: number, mi: number, ci: number, text: string, color?: string | null) => {
@@ -339,6 +353,13 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
 
         return (
             <div>
+                {/* Swap flash animation */}
+                <style>{`
+                    @keyframes swapFlash {
+                        0% { background-color: #86efac; }
+                        100% { background-color: transparent; }
+                    }
+                `}</style>
                 <div ref={ref} className="bg-white" style={{ padding: 0 }}>
                     {squads.map((squad, si) => {
                         const accent = SQUAD_ACCENTS[si % SQUAD_ACCENTS.length];
@@ -417,11 +438,21 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                     </thead>
                                     <tbody onDragOver={(e) => handleSquadDragOver(e, si)} onDragLeave={handleSquadDragLeave} onDrop={(e) => handleSquadDrop(e, si)}>
                                         {squad.members.map((member, mi) => {
+                                            const cellKey = `${si}-${mi}`;
                                             const isDragging = nameDrag?.si === si && nameDrag?.mi === mi;
                                             const isSwapTarget = nameDropTarget?.si === si && nameDropTarget?.mi === mi;
                                             const isEmpty = !member.name;
-                                            const swapStyle: React.CSSProperties = isSwapTarget
-                                                ? { boxShadow: `inset 0 0 0 2px ${accent.badge}`, background: `${accent.bg}` }
+                                            const isFlashing = swapFlash.cells.includes(cellKey) && (Date.now() - swapFlash.ts < 1200);
+                                            // Build swap target name for preview
+                                            const incomingName = isSwapTarget ? dragSourceName : "";
+                                            const outgoingName = isSwapTarget && member.name ? member.name : "";
+
+                                            const rowStyle: React.CSSProperties = isDragging
+                                                ? { outline: `2px dashed ${accent.badge}`, outlineOffset: "-2px", opacity: 0.4, background: `${accent.bg}44` }
+                                                : isSwapTarget
+                                                ? { boxShadow: `inset 0 0 0 2px ${accent.badge}, 0 0 8px ${accent.badge}66`, background: `${accent.bg}` }
+                                                : isFlashing
+                                                ? { animation: "swapFlash 0.8s ease-out" }
                                                 : {};
                                             return (
                                             <tr key={mi}
@@ -430,9 +461,9 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                 onDragOver={(e) => handleNameDragOver(e, si, mi)}
                                                 onDrop={(e) => handleNameDrop(e, si, mi)}
                                                 onDragEnd={handleNameDragEnd}
-                                                className={`transition-all duration-150 ${isDragging ? "opacity-30 scale-[0.97]" : isSwapTarget ? "" : isEmpty ? "" : "hover:bg-blue-50/30"}`}
-                                                style={swapStyle}>
-                                                <td className="border border-neutral-300 px-2 py-1.5 font-bold text-[11px]"
+                                                className={`transition-all duration-150 ${isDragging ? "" : isSwapTarget ? "" : isEmpty ? "" : "hover:bg-blue-50/30"}`}
+                                                style={rowStyle}>
+                                                <td className="border border-neutral-300 px-2 py-1.5 font-bold text-[11px] relative"
                                                     style={{
                                                         backgroundColor: isEmpty ? "#f9f9f9" : member.isLeader ? accent.light : "#fff",
                                                         color: isEmpty ? "#999" : "#000",
@@ -478,6 +509,16 @@ export const RosterTable = forwardRef<HTMLDivElement, RosterTableProps>(
                                                                 className="text-[9px] text-neutral-400 hover:text-red-500 ml-auto shrink-0" title="清除成员(保留位置数据)" data-no-export>✕</button>
                                                         )}
                                                     </div>
+                                                    {/* Swap preview overlay */}
+                                                    {isSwapTarget && incomingName && (
+                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" data-no-export>
+                                                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white shadow-lg"
+                                                                style={{ backgroundColor: accent.badge }}>
+                                                                {outgoingName && <><span className="opacity-70">{outgoingName}</span><span>⇄</span></>}
+                                                                <span>{incomingName}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 {member.cells.map((cell, ci) => {
                                                     const columnName = columns[ci] || "";
