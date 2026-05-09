@@ -541,6 +541,12 @@ export default function AnalysisPage() {
     const playerAggs = useMemo(() => {
         if (stats.length === 0 || matches.length === 0) return [];
 
+        const baiyeName = baiye?.name?.trim() ?? '';
+
+        // Debug: log unique team names in stats vs baiye name
+        const uniqueTeamNames = [...new Set(stats.map(s => s.team_name))];
+        console.log('[Analysis] baiye.name:', JSON.stringify(baiyeName), 'team_names in stats:', uniqueTeamNames);
+
         const matchMap = new Map(matches.map(m => [m.id, m]));
         const playerMap = new Map<string, {
             matches: Set<string>;
@@ -554,7 +560,8 @@ export default function AnalysisPage() {
             const m = matchMap.get(s.match_id);
             if (!m) continue;
             // Only count our baiye's players, skip enemy team
-            if (s.team_name !== baiye?.name) continue;
+            // Use trim + case-insensitive comparison to handle whitespace/casing differences
+            if (s.team_name?.trim().toLowerCase() !== baiyeName.toLowerCase()) continue;
             const coinValue = m.coin_value || 720;
 
             if (!playerMap.has(s.player_name)) {
@@ -614,8 +621,9 @@ export default function AnalysisPage() {
     // ── Per-player match data (for charts + list) ──
     const buildPlayerMatchData = useCallback((playerName: string): PerMatchPlayer[] => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
+        const baiyeName = baiye?.name?.trim().toLowerCase() ?? '';
         return stats
-            .filter(s => s.player_name === playerName && s.team_name === baiye?.name)
+            .filter(s => s.player_name === playerName && s.team_name?.trim().toLowerCase() === baiyeName)
             .map(s => {
                 const m = matchMap.get(s.match_id);
                 if (!m) return null;
@@ -658,6 +666,7 @@ export default function AnalysisPage() {
     // ── Per-match aggregation (for bottom section) ──
     const matchAggs = useMemo(() => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
+        const baiyeName = baiye?.name?.trim().toLowerCase() ?? '';
         // Group ALL stats for detail tables (both teams)
         const allGrouped = new Map<string, MatchStat[]>();
         for (const s of stats) {
@@ -668,7 +677,7 @@ export default function AnalysisPage() {
         return matches.map(m => {
             const allStats = allGrouped.get(m.id) || [];
             // Only our team for metric aggregations
-            const ourStats = allStats.filter(s => s.team_name === baiye?.name);
+            const ourStats = allStats.filter(s => s.team_name?.trim().toLowerCase() === baiyeName);
             const n = ourStats.length || 1;
             const totalKills = ourStats.reduce((a, s) => a + (s.kills || 0), 0);
             const totalAssists = ourStats.reduce((a, s) => a + (s.assists || 0), 0);
