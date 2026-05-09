@@ -2,12 +2,14 @@
 
 import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
+import { BattleMap } from "@/components/feature/battle-map";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Match, MatchStat, User } from "@/types/app";
+import { Baiye, MatchStat, RosterData, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ── Types ──
+// Matches the SQL RPC fn_analysis_player_aggs output
 interface PlayerAgg {
     player_name: string;
     matches_played: number;
@@ -15,13 +17,29 @@ interface PlayerAgg {
     total_assists: number;
     total_deaths: number;
     total_coins: number;
-    total_coin_value: number;
     total_building_damage: number;
     total_healing: number;
-    avg_coin_ratio: number;    // avg(coins / coin_value)
-    avg_building: number;      // avg building_damage
-    avg_healing: number;       // avg healing
-    kda: number;               // kills / max(deaths, 1)
+    total_damage: number;
+    total_damage_taken: number;
+    avg_coin_ratio: number;
+    avg_building: number;
+    avg_healing: number;
+    kd: number;                // SQL returns 'kd' not 'kda'
+}
+
+// Matches the SQL RPC fn_analysis_match_summaries output
+interface MatchSummary {
+    match_id: string;
+    team_a: string;
+    team_b: string;
+    winner: string | null;
+    match_type: string;
+    match_start_time: string;
+    coin_value: number;
+    player_count: number;
+    avg_coin_ratio: number;
+    avg_building: number;
+    team_kd: number;
 }
 
 type SortDir = 'asc' | 'desc';
@@ -52,15 +70,43 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
     return <span className="text-yellow-400 ml-0.5">{dir === 'asc' ? '▲' : '▼'}</span>;
 }
 
-interface MatchWithTeam extends Match {
+// Per-match player trend data (from /api/analysis/player-trend)
+interface TrendPoint {
+    match_id: string;
+    team_a: string;
+    team_b: string;
+    winner: string | null;
+    match_type: string;
+    match_start_time: string;
     coin_value: number;
-}
-
-interface PerMatchPlayer {
-    match: MatchWithTeam;
-    stat: MatchStat;
+    kills: number;
+    assists: number;
+    deaths: number;
+    coins: number;
+    damage: number;
+    damage_taken: number;
+    healing: number;
+    building_damage: number;
     coin_ratio: number;
     kda: number;
+}
+
+// Match detail cache entry (from /api/analysis/match)
+interface MatchDetailCache {
+    match: {
+        id: string;
+        team_a: string;
+        team_b: string;
+        winner: string | null;
+        match_type: string;
+        match_start_time: string;
+        coin_value: number;
+        big_dragon_team?: string | null;
+        small_dragon_team?: string | null;
+    };
+    stats: MatchStat[];
+    roster?: { id: string; roster_date: string; roster_data: RosterData } | null;
+    loading?: boolean;
 }
 
 const PERIODS = [
@@ -123,7 +169,7 @@ function AnalysisTimeline({ matches, baiyeName, onSelect, activeId }: {
     const sorted = useMemo(() =>
         [...matches]
             .filter(m => m.match_start_time)
-            .sort((a, b) => new Date(a.match_start_time!).getTime() - new Date(b.match_start_time!).getTime()),
+            .sort((a, b) => new Date(b.match_start_time!).getTime() - new Date(a.match_start_time!).getTime()),
         [matches]
     );
 
@@ -370,10 +416,15 @@ export default function AnalysisPage() {
     // View tab: players vs matches
     const [viewTab, setViewTab] = useState<AnalysisTab>('players');
 
-    // Data
-    const [matches, setMatches] = useState<MatchWithTeam[]>([]);
-    const [stats, setStats] = useState<MatchStat[]>([]);
+    // Data — now server-aggregated
+    const [playerAggs, setPlayerAggs] = useState<PlayerAgg[]>([]);
+    const [matchSummaries, setMatchSummaries] = useState<MatchSummary[]>([]);
     const [fetching, setFetching] = useState(false);
+
+    // Lazy-loaded detail caches
+    const [matchDetailCache, setMatchDetailCache] = useState<Map<string, MatchDetailCache>>(new Map());
+    const [playerTrendCache, setPlayerTrendCache] = useState<Map<string, TrendPoint[]>>(new Map());
+    const [trendLoading, setTrendLoading] = useState(false);
 
     // Selected player for chart view
     const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
@@ -384,10 +435,116 @@ export default function AnalysisPage() {
 
     // Expanded match in per-match section
     const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+    const matchDetailRef = useRef<HTMLDivElement>(null);
+
+    // ── AI match analysis cache ──
+    const [aiAnalysisCache, setAiAnalysisCache] = useState<Map<string, string>>(new Map());
+    const [aiAnalysisLoading, setAiAnalysisLoading] = useState<string | null>(null);
+
+    const fetchAiAnalysis = useCallback(async (matchId: string, regenerate = false) => {
+        if (!regenerate && aiAnalysisCache.has(matchId)) return;
+        const detail = matchDetailCache.get(matchId);
+        if (!detail || detail.loading || detail.stats.length === 0) return;
+
+        setAiAnalysisLoading(matchId);
+        try {
+            const ourTeamStats = detail.stats.filter(s => s.team_name === baiye?.name);
+            const opponentStats = detail.stats.filter(s => s.team_name !== baiye?.name);
+
+            // Build roster summary if available
+            let rosterSummary: string | undefined;
+            if (detail.roster?.roster_data) {
+                const rd = detail.roster.roster_data;
+                const cols = rd.columns || [];
+                const jungleIdx = cols.findIndex(c => c.includes('打野'));
+                if (jungleIdx >= 0) {
+                    const lines: string[] = [];
+                    const processSquads = (squads: any[], prefix: string) => {
+                        squads.forEach((sq: any, si: number) => {
+                            for (const m of sq.members || []) {
+                                const cell = m.cells?.[jungleIdx];
+                                if (cell?.text) lines.push(`${prefix}${si + 1}队 ${m.name}: ${cell.text}`);
+                            }
+                        });
+                    };
+                    processSquads(rd.attack || [], '进攻');
+                    processSquads(rd.defense || [], '防守');
+                    if (lines.length > 0) rosterSummary = lines.join('\n');
+                }
+            }
+
+            const res = await fetch('/api/analysis/match-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    match: detail.match,
+                    ourTeamStats,
+                    opponentStats,
+                    rosterSummary,
+                    baiyeId,
+                    regenerate,
+                    dragonInfo: {
+                        big_dragon_team: detail.match?.big_dragon_team || null,
+                        small_dragon_team: detail.match?.small_dragon_team || null,
+                    },
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.analysis) {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, data.analysis);
+                    return next;
+                });
+            } else {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, `分析失败: ${data.error || '未知错误'}`);
+                    return next;
+                });
+            }
+        } catch (err) {
+            console.error('AI analysis error:', err);
+            setAiAnalysisCache(prev => {
+                const next = new Map(prev);
+                next.set(matchId, '分析请求失败');
+                return next;
+            });
+        } finally {
+            setAiAnalysisLoading(null);
+        }
+    }, [aiAnalysisCache, matchDetailCache, baiye?.name, baiyeId]);
+
+    // Load saved AI analysis from DB (no generation, silent)
+    const loadSavedAiAnalysis = useCallback(async (matchId: string) => {
+        if (aiAnalysisCache.has(matchId)) return; // already loaded
+        if (!baiyeId) return;
+        try {
+            const res = await fetch('/api/analysis/match-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    match: { id: matchId },
+                    baiyeId,
+                    loadOnly: true,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.analysis && data.saved) {
+                setAiAnalysisCache(prev => {
+                    const next = new Map(prev);
+                    next.set(matchId, data.analysis);
+                    return next;
+                });
+            }
+        } catch {
+            // Silent fail — user can still manually trigger
+        }
+    }, [aiAnalysisCache, baiyeId]);
 
     // ── Sort states ──
-    type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kda' | 'total_kills' | 'total_assists' | 'total_deaths';
-    const [playerSort, setPlayerSort] = useState<SortState<PlayerSortKey>>({ key: 'kda', dir: 'desc' });
+    type PlayerSortKey = 'player_name' | 'matches_played' | 'avg_coin_ratio' | 'avg_building' | 'avg_healing' | 'kd' | 'total_kills' | 'total_assists' | 'total_deaths';
+    const [playerSort, setPlayerSort] = useState<SortState<PlayerSortKey>>({ key: 'kd', dir: 'desc' });
 
 
     const [detailSort, setDetailSort] = useState<SortState<DetailSortKey>>({ key: 'kda', dir: 'desc' });
@@ -430,6 +587,9 @@ export default function AnalysisPage() {
     const fetchData = useCallback(async () => {
         if (!baiye?.name) return;
         setFetching(true);
+        // Clear caches when filters change
+        setMatchDetailCache(new Map());
+        setPlayerTrendCache(new Map());
         try {
             const params = new URLSearchParams({ baiye_name: baiye.name });
             if (matchType !== "全部") params.set("match_type", matchType);
@@ -438,8 +598,8 @@ export default function AnalysisPage() {
             const res = await fetch(`/api/analysis?${params}`);
             if (!res.ok) throw new Error("Failed to fetch");
             const data = await res.json();
-            setMatches(data.matches || []);
-            setStats(data.stats || []);
+            setPlayerAggs(data.player_aggs || []);
+            setMatchSummaries(data.match_summaries || []);
         } catch (err) {
             console.error("Analysis fetch error:", err);
         } finally {
@@ -537,6 +697,7 @@ export default function AnalysisPage() {
         }
     }, [showRenameHistory, isAdmin, fetchRenameLogs]);
 
+<<<<<<< HEAD
     // ── Compute player aggregations ──
     const playerAggs = useMemo(() => {
         if (stats.length === 0 || matches.length === 0) return [];
@@ -605,19 +766,24 @@ export default function AnalysisPage() {
     }, [stats, matches, baiye?.name]);
 
     // Sorted player list
+=======
+    // Sorted player list (playerAggs now comes from server, no need to compute)
+>>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
     const sortedPlayerAggs = useMemo(() => {
         const sorted = [...playerAggs];
         const { key, dir } = playerSort;
         sorted.sort((a, b) => {
             let va: number | string, vb: number | string;
             if (key === 'player_name') { va = a.player_name; vb = b.player_name; }
-            else { va = a[key] as number; vb = b[key] as number; }
+            else if (key === 'kd') { va = a.kd; vb = b.kd; }
+            else { va = a[key as keyof PlayerAgg] as number; vb = b[key as keyof PlayerAgg] as number; }
             if (typeof va === 'string' && typeof vb === 'string') return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
             return dir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
         });
         return sorted;
     }, [playerAggs, playerSort]);
 
+<<<<<<< HEAD
     // ── Per-player match data (for charts + list) ──
     const buildPlayerMatchData = useCallback((playerName: string): PerMatchPlayer[] => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
@@ -638,22 +804,69 @@ export default function AnalysisPage() {
             .filter(Boolean)
             .sort((a, b) => new Date(a!.match.match_start_time!).getTime() - new Date(b!.match.match_start_time!).getTime()) as PerMatchPlayer[];
     }, [stats, matches, baiye?.name]);
+=======
+    // ── Lazy-load player trend data ──
+    const fetchPlayerTrend = useCallback(async (playerName: string) => {
+        if (!baiye?.name) return;
+        // Skip if already cached
+        if (playerTrendCache.has(playerName)) return;
+>>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
 
-    const playerMatchData = useMemo((): PerMatchPlayer[] => {
+        setTrendLoading(true);
+        try {
+            const params = new URLSearchParams({
+                baiye_name: baiye.name,
+                player_name: playerName,
+            });
+            if (matchType !== "全部") params.set("match_type", matchType);
+            if (period) params.set("period", period);
+
+            const res = await fetch(`/api/analysis/player-trend?${params}`);
+            if (!res.ok) throw new Error("Failed to fetch trend");
+            const data = await res.json();
+            setPlayerTrendCache(prev => {
+                const next = new Map(prev);
+                next.set(playerName, data.trend || []);
+                return next;
+            });
+        } catch (err) {
+            console.error("Player trend fetch error:", err);
+        } finally {
+            setTrendLoading(false);
+        }
+    }, [baiye?.name, matchType, period, playerTrendCache]);
+
+    // When selectedPlayer changes, fetch trend data
+    useEffect(() => {
+        if (selectedPlayer) {
+            fetchPlayerTrend(selectedPlayer);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedPlayer]);
+
+    // When compare players change, fetch their trends too
+    useEffect(() => {
+        for (const name of comparePlayers) {
+            fetchPlayerTrend(name);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [comparePlayers]);
+
+    const playerMatchData = useMemo((): TrendPoint[] => {
         if (!selectedPlayer) return [];
-        return buildPlayerMatchData(selectedPlayer);
-    }, [selectedPlayer, buildPlayerMatchData]);
+        return playerTrendCache.get(selectedPlayer) || [];
+    }, [selectedPlayer, playerTrendCache]);
 
-    // Build comparison player data — keyed by match_id for alignment
+    // Build comparison player data from cache
     const comparePlayersData = useMemo(() => {
         return comparePlayers.map((name, idx) => ({
             name,
             color: COMPARE_COLORS[idx % COMPARE_COLORS.length],
-            data: buildPlayerMatchData(name),
+            data: playerTrendCache.get(name) || [],
         }));
-    }, [comparePlayers, buildPlayerMatchData]);
+    }, [comparePlayers, playerTrendCache]);
 
-    // Available players for comparison dropdown (exclude the selected player, and already compared)
+    // Available players for comparison dropdown
     const availableComparePlayers = useMemo(() => {
         if (!selectedPlayer) return [];
         const excluded = new Set([selectedPlayer, ...comparePlayers]);
@@ -663,6 +876,7 @@ export default function AnalysisPage() {
             .sort((a, b) => a.localeCompare(b));
     }, [selectedPlayer, comparePlayers, playerAggs]);
 
+<<<<<<< HEAD
     // ── Per-match aggregation (for bottom section) ──
     const matchAggs = useMemo(() => {
         const matchMap = new Map(matches.map(m => [m.id, m]));
@@ -696,8 +910,50 @@ export default function AnalysisPage() {
                 team_a_stats: allStats.filter(s => s.team_name === m.team_a),
                 team_b_stats: allStats.filter(s => s.team_name === m.team_b),
             };
+=======
+    // ── Lazy-load match details ──
+    const fetchMatchDetail = useCallback(async (matchId: string) => {
+        if (!matchId) return;
+        // Already cached (and not loading)
+        if (matchDetailCache.has(matchId) && !matchDetailCache.get(matchId)?.loading) return;
+
+        // Mark as loading
+        setMatchDetailCache(prev => {
+            const next = new Map(prev);
+            next.set(matchId, { match: {} as MatchDetailCache['match'], stats: [], loading: true });
+            return next;
+>>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
         });
-    }, [matches, stats, baiye?.name]);
+
+        try {
+            const res = await fetch(`/api/analysis/match?match_id=${matchId}`);
+            if (!res.ok) throw new Error("Failed to fetch match detail");
+            const data = await res.json();
+            setMatchDetailCache(prev => {
+                const next = new Map(prev);
+                next.set(matchId, { match: data.match, stats: data.stats || [], roster: data.roster || null, loading: false });
+                return next;
+            });
+        } catch (err) {
+            console.error("Match detail fetch error:", err);
+            setMatchDetailCache(prev => {
+                const next = new Map(prev);
+                next.delete(matchId);
+                return next;
+            });
+        }
+    }, [matchDetailCache]);
+
+    // When expandedMatchId changes, fetch match details + load saved AI analysis
+    useEffect(() => {
+        if (expandedMatchId) {
+            fetchMatchDetail(expandedMatchId);
+            loadSavedAiAnalysis(expandedMatchId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [expandedMatchId]);
+
+    // NOTE: AI analysis GENERATION is manual-only. Saved analyses are auto-loaded.
 
     // ── Chart rendering (SVG) — with comparison support ──
     const renderChart = () => {
@@ -709,19 +965,19 @@ export default function AnalysisPage() {
             );
         }
 
-        const getMetricValue = (d: PerMatchPlayer) => {
+        const getMetricValue = (d: TrendPoint) => {
             if (chartMetric === "coin_ratio") return d.coin_ratio;
-            if (chartMetric === "building") return d.stat.building_damage || 0;
-            if (chartMetric === "healing") return d.stat.healing || 0;
+            if (chartMetric === "building") return d.building_damage || 0;
+            if (chartMetric === "healing") return d.healing || 0;
             return d.kda;
         };
 
         const primaryData = playerMatchData.map(getMetricValue);
 
         // Build comparison lines aligned to the same match sequence
-        const primaryMatchIds = playerMatchData.map(d => d.match.id);
+        const primaryMatchIds = playerMatchData.map(d => d.match_id);
         const compareLines = comparePlayersData.map(cp => {
-            const dataMap = new Map(cp.data.map(d => [d.match.id, d]));
+            const dataMap = new Map(cp.data.map(d => [d.match_id, d]));
             // For each primary match, find the comparison player's data
             const values = primaryMatchIds.map(mId => {
                 const d = dataMap.get(mId);
@@ -747,7 +1003,7 @@ export default function AnalysisPage() {
         const toX = (i: number) => PX + (i / (primaryData.length - 1)) * plotW;
 
         const primaryPoints = primaryData.map((v, i) => ({
-            x: toX(i), y: toY(v), value: v, match: playerMatchData[i].match,
+            x: toX(i), y: toY(v), value: v, matchData: playerMatchData[i],
         }));
 
         const primaryPathD = primaryPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
@@ -832,7 +1088,7 @@ export default function AnalysisPage() {
                             fill="#888" fontSize={8} textAnchor="middle"
                             transform={`rotate(-20, ${p.x}, ${H - 4})`}
                         >
-                            {p.match.team_a} vs {p.match.team_b}
+                            {p.matchData.team_a} vs {p.matchData.team_b}
                         </text>
                         {/* Value above */}
                         <text x={p.x} y={p.y - 10} fill={metaInfo.color} fontSize={9} textAnchor="middle" fontWeight="bold">
@@ -898,8 +1154,8 @@ export default function AnalysisPage() {
                                         key={t}
                                         onClick={() => setMatchType(t)}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${matchType === t
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {t}
@@ -919,8 +1175,8 @@ export default function AnalysisPage() {
                                         key={p.value}
                                         onClick={() => setPeriod(p.value)}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${period === p.value
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {p.label}
@@ -933,13 +1189,10 @@ export default function AnalysisPage() {
                     {/* Summary stats */}
                     <div className="flex gap-4 pt-2 border-t border-neutral-700">
                         <div className="text-xs text-neutral-500">
-                            共 <span className="text-white font-bold">{matches.length}</span> 场对局
+                            共 <span className="text-white font-bold">{matchSummaries.length}</span> 场对局
                         </div>
                         <div className="text-xs text-neutral-500">
                             共 <span className="text-white font-bold">{playerAggs.length}</span> 名参战玩家
-                        </div>
-                        <div className="text-xs text-neutral-500">
-                            共 <span className="text-white font-bold">{stats.length}</span> 条数据记录
                         </div>
                     </div>
                 </PixelCard>
@@ -951,7 +1204,7 @@ export default function AnalysisPage() {
                     </div>
                 )}
 
-                {!fetching && matches.length === 0 && (
+                {!fetching && matchSummaries.length === 0 && (
                     <div className="text-center py-16 text-neutral-600">
                         <div className="text-4xl mb-4">📭</div>
                         <p className="text-sm">该筛选条件下暂无对战数据</p>
@@ -959,41 +1212,159 @@ export default function AnalysisPage() {
                 )}
 
                 {/* ═══ Timeline ═══ */}
-                {!fetching && matches.length > 0 && baiye && (
+                {!fetching && matchSummaries.length > 0 && baiye && (
                     <AnalysisTimeline
-                        matches={matches}
+                        matches={matchSummaries.map(ms => ({ id: ms.match_id, team_a: ms.team_a, team_b: ms.team_b, winner: ms.winner, match_type: ms.match_type, match_start_time: ms.match_start_time }))}
                         baiyeName={baiye.name}
                         onSelect={(id) => {
-                            setViewTab('matches');
-                            setExpandedMatchId(expandedMatchId === id ? null : id);
+                            const newId = expandedMatchId === id ? null : id;
+                            setExpandedMatchId(newId);
+                            if (newId) {
+                                setTimeout(() => {
+                                    matchDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 100);
+                            }
                         }}
                         activeId={expandedMatchId}
                     />
                 )}
 
-                {/* ═══ View Tab Switcher ═══ */}
-                {!fetching && matches.length > 0 && (
-                    <div className="flex border-2 border-neutral-700 overflow-hidden">
-                        {[
-                            { key: 'players' as const, label: '🏆 玩家综合数据', count: playerAggs.length },
-                            { key: 'matches' as const, label: '📋 逐场分析', count: matchAggs.length },
-                        ].map(tab => (
-                            <button
-                                key={tab.key}
-                                onClick={() => setViewTab(tab.key)}
-                                className={`flex-1 py-2.5 text-xs font-bold transition-all ${viewTab === tab.key
-                                        ? 'bg-yellow-500 text-black'
-                                        : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
-                                    }`}
-                            >
-                                {tab.label} ({tab.count})
-                            </button>
-                        ))}
-                    </div>
-                )}
+                {/* ═══ Expanded Match Detail (from timeline selection) ═══ */}
+                {expandedMatchId && (() => {
+                    const ms = matchSummaries.find(m => m.match_id === expandedMatchId);
+                    if (!ms) return null;
+                    const detail = matchDetailCache.get(ms.match_id);
+                    const typeBadge = ms.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
+                        ms.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
+                            "text-green-400 border-green-500/30 bg-green-500/10";
+                    return (
+                        <div ref={matchDetailRef} className="border-2 border-yellow-500/30 bg-neutral-900/80" style={{ scrollMarginTop: '1rem' }}>
+                            {/* Match header */}
+                            <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-700 bg-neutral-800/60">
+                                <span className={`px-1.5 py-0.5 text-[10px] font-bold border shrink-0 ${typeBadge}`}>
+                                    {ms.match_type || '排位'}
+                                </span>
+                                <span className="text-white text-xs font-bold">
+                                    {ms.team_a} <span className="text-neutral-600">vs</span> {ms.team_b}
+                                </span>
+                                <span className="text-[11px] text-neutral-400 shrink-0">
+                                    {formatTime(ms.match_start_time)}
+                                </span>
+                                {ms.winner && ms.winner !== 'draw' && (
+                                    <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
+                                        🏆 {ms.winner}
+                                    </span>
+                                )}
+                                <div className="flex-1" />
+                                <button
+                                    onClick={() => setExpandedMatchId(null)}
+                                    className="text-neutral-500 hover:text-white transition-colors text-xs px-2 py-1"
+                                >
+                                    ✕ 关闭
+                                </button>
+                            </div>
+
+                            {/* Detail body */}
+                            <div className="px-4 py-3 space-y-4">
+                                {detail?.loading ? (
+                                    <div className="flex items-center gap-2 text-xs text-neutral-500 py-4 justify-center">
+                                        <div className="w-3 h-3 border border-neutral-500 border-t-transparent animate-spin" />
+                                        加载对局详情...
+                                    </div>
+                                ) : detail?.stats && detail.stats.length > 0 ? (
+                                    <>
+                                        {/* ── Battle Map (always show with match info, roster is optional) ── */}
+                                        <BattleMap
+                                            rosterData={detail.roster?.roster_data}
+                                            stats={detail.stats.filter(s => s.team_name === (baiye?.name || ms.team_a))}
+                                            coinValue={detail.match?.coin_value || ms.coin_value || 792}
+                                            baiyeName={baiye?.name}
+                                            matchInfo={detail.match ? {
+                                                team_a: detail.match.team_a || ms.team_a,
+                                                team_b: detail.match.team_b || ms.team_b,
+                                                winner: detail.match.winner || ms.winner,
+                                                big_dragon_team: detail.match.big_dragon_team,
+                                                small_dragon_team: detail.match.small_dragon_team,
+                                            } : null}
+                                            allStats={detail.stats}
+                                        />
+
+                                        {/* ── Data tables + AI analysis side by side ── */}
+                                        <div className="flex flex-col lg:flex-row gap-4">
+                                            {/* Left: Detail Tables */}
+                                            <div className="flex-1 min-w-0 space-y-4">
+                                                {[ms.team_a, ms.team_b].map(teamName => {
+                                                    const tStats = detail.stats.filter(s => s.team_name === teamName);
+                                                    if (tStats.length === 0) return null;
+                                                    return (
+                                                        <DetailTable
+                                                            key={teamName}
+                                                            teamName={teamName}
+                                                            stats={tStats}
+                                                            coinValue={detail.match?.coin_value || ms.coin_value || 792}
+                                                            sort={detailSort}
+                                                            onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
+                                                            formatNum={formatNum}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Right: AI Analysis */}
+                                            <div className="lg:w-72 shrink-0">
+                                                <div className="border border-neutral-700 bg-neutral-950/60 h-full">
+                                                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700">
+                                                        <span className="text-xs font-bold text-purple-400 uppercase">🤖 AI 战术分析</span>
+                                                        <div className="flex items-center gap-1">
+                                                            {aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                <button
+                                                                    onClick={() => fetchAiAnalysis(ms.match_id, true)}
+                                                                    className="text-[10px] px-2 py-0.5 border border-neutral-600 text-neutral-400 bg-neutral-800 hover:border-purple-500/40 hover:text-purple-400 hover:bg-purple-500/10 transition-colors font-bold"
+                                                                    title="重新生成AI分析"
+                                                                >
+                                                                    🔄 重新生成
+                                                                </button>
+                                                            )}
+                                                            {!aiAnalysisCache.has(ms.match_id) && aiAnalysisLoading !== ms.match_id && (
+                                                                <button
+                                                                    onClick={() => fetchAiAnalysis(ms.match_id)}
+                                                                    className="text-[10px] px-2 py-0.5 border border-purple-500/40 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-bold"
+                                                                >
+                                                                    分析此战
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 text-xs leading-relaxed">
+                                                        {aiAnalysisLoading === ms.match_id ? (
+                                                            <div className="flex flex-col items-center gap-2 py-6 text-neutral-500">
+                                                                <div className="w-4 h-4 border-2 border-purple-500/40 border-t-purple-400 animate-spin rounded-full" />
+                                                                <span>AI 分析中...</span>
+                                                            </div>
+                                                        ) : aiAnalysisCache.has(ms.match_id) ? (
+                                                            <div className="text-neutral-300 whitespace-pre-wrap">
+                                                                {aiAnalysisCache.get(ms.match_id)}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-neutral-600 text-center py-6">
+                                                                点击「分析此战」获取 AI 战术洞察
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-xs text-neutral-600 text-center py-4">暂无详细数据</div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* ═══ Player Summary Table ═══ */}
-                {!fetching && viewTab === 'players' && sortedPlayerAggs.length > 0 && (
+                {!fetching && sortedPlayerAggs.length > 0 && (
                     <PixelCard className="bg-neutral-800 space-y-3">
                         <h3 className="text-sm font-bold text-yellow-500 uppercase border-b-2 border-yellow-500/20 pb-2">
                             🏆 玩家综合数据
@@ -1005,7 +1376,7 @@ export default function AnalysisPage() {
                             <div className="flex flex-wrap gap-1.5 pb-2 border-b border-neutral-700/60">
                                 <span className="text-[10px] text-neutral-600 self-center pr-0.5 shrink-0">排序:</span>
                                 {([
-                                    { key: 'kda' as const, label: 'KD', color: 'text-cyan-400' },
+                                    { key: 'kd' as const, label: 'KD', color: 'text-cyan-400' },
                                     { key: 'avg_coin_ratio' as const, label: '拿野', color: 'text-yellow-500' },
                                     { key: 'avg_building' as const, label: '塔伤', color: 'text-orange-400' },
                                     { key: 'avg_healing' as const, label: '治疗', color: 'text-emerald-400' },
@@ -1017,11 +1388,10 @@ export default function AnalysisPage() {
                                         <button
                                             key={opt.key}
                                             onClick={() => setPlayerSort(toggleSort(playerSort, opt.key))}
-                                            className={`flex items-center gap-0.5 px-2.5 py-1 text-[11px] font-bold border transition-all ${
-                                                isActive
+                                            className={`flex items-center gap-0.5 px-2.5 py-1 text-[11px] font-bold border transition-all ${isActive
                                                     ? 'bg-yellow-500/15 border-yellow-500/50 text-yellow-400'
                                                     : 'bg-neutral-800 border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300'
-                                            }`}
+                                                }`}
                                         >
                                             <span className={isActive ? 'text-yellow-400' : opt.color}>{opt.label}</span>
                                             {isActive && (
@@ -1035,17 +1405,16 @@ export default function AnalysisPage() {
                             </div>
                             {sortedPlayerAggs.map((p, i) => {
                                 const isSelected = selectedPlayer === p.player_name;
-                                const kdaColor = p.kda >= 10 ? 'text-cyan-300' : p.kda >= 5 ? 'text-cyan-400' : p.kda >= 3 ? 'text-green-400' : 'text-neutral-400';
+                                const kdaColor = p.kd >= 10 ? 'text-cyan-300' : p.kd >= 5 ? 'text-cyan-400' : p.kd >= 3 ? 'text-green-400' : 'text-neutral-400';
                                 const coinColor = p.avg_coin_ratio >= 1.5 ? 'text-yellow-400' : p.avg_coin_ratio >= 1.0 ? 'text-yellow-500/80' : 'text-neutral-400';
                                 return (
                                     <div
                                         key={p.player_name}
                                         onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
-                                        className={`border-2 px-3 py-3 cursor-pointer transition-colors ${
-                                            isSelected
+                                        className={`border-2 px-3 py-3 cursor-pointer transition-colors ${isSelected
                                                 ? 'border-yellow-500/60 bg-yellow-500/8'
                                                 : 'border-neutral-700 bg-neutral-900/40 hover:border-neutral-600'
-                                        }`}
+                                            }`}
                                     >
                                         {/* Row 1: rank + name + rank indicator */}
                                         <div className="flex items-center gap-2 mb-2">
@@ -1099,7 +1468,7 @@ export default function AnalysisPage() {
                                         <div className="grid grid-cols-4 gap-1 text-center">
                                             <div>
                                                 <div className="text-[10px] text-cyan-500/70 mb-0.5">KD</div>
-                                                <div className={`text-sm font-black ${kdaColor}`}>{p.kda.toFixed(2)}</div>
+                                                <div className={`text-sm font-black ${kdaColor}`}>{p.kd.toFixed(2)}</div>
                                             </div>
                                             <div>
                                                 <div className="text-[10px] text-yellow-500/70 mb-0.5">拿野</div>
@@ -1135,7 +1504,7 @@ export default function AnalysisPage() {
                                             { key: 'avg_coin_ratio' as const, label: '拿野', sub: 'coin/价值', color: 'text-yellow-500' },
                                             { key: 'avg_building' as const, label: '平均塔伤', color: 'text-orange-400' },
                                             { key: 'avg_healing' as const, label: '平均治疗', color: 'text-emerald-400' },
-                                            { key: 'kda' as const, label: 'KD', sub: 'K/D', color: 'text-cyan-400' },
+                                            { key: 'kd' as const, label: 'KD', sub: 'K/D', color: 'text-cyan-400' },
                                         ]).map(col => (
                                             <th
                                                 key={col.key}
@@ -1165,8 +1534,8 @@ export default function AnalysisPage() {
                                                 key={p.player_name}
                                                 onClick={() => setSelectedPlayer(isSelected ? null : p.player_name)}
                                                 className={`border-b border-neutral-800 cursor-pointer transition-colors ${isSelected
-                                                        ? "bg-yellow-500/10 border-yellow-500/30"
-                                                        : "hover:bg-neutral-750 hover:bg-white/5"
+                                                    ? "bg-yellow-500/10 border-yellow-500/30"
+                                                    : "hover:bg-neutral-750 hover:bg-white/5"
                                                     }`}
                                             >
                                                 <td className="py-2.5 px-2 text-neutral-600 text-xs">
@@ -1235,8 +1604,8 @@ export default function AnalysisPage() {
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
                                                     <span className={`text-xs font-bold ${p.avg_coin_ratio >= 1.5 ? "text-yellow-400" :
-                                                            p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
-                                                                "text-neutral-400"
+                                                        p.avg_coin_ratio >= 1.0 ? "text-yellow-500/70" :
+                                                            "text-neutral-400"
                                                         }`}>
                                                         {p.avg_coin_ratio.toFixed(2)}
                                                     </span>
@@ -1252,12 +1621,12 @@ export default function AnalysisPage() {
                                                     </span>
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 ${p.kda >= 10 ? "text-cyan-300 bg-cyan-500/10" :
-                                                            p.kda >= 5 ? "text-cyan-400" :
-                                                                p.kda >= 3 ? "text-green-400" :
-                                                                    "text-neutral-400"
+                                                    <span className={`text-xs font-bold px-2 py-0.5 ${p.kd >= 10 ? "text-cyan-300 bg-cyan-500/10" :
+                                                        p.kd >= 5 ? "text-cyan-400" :
+                                                            p.kd >= 3 ? "text-green-400" :
+                                                                "text-neutral-400"
                                                         }`}>
-                                                        {p.kda.toFixed(2)}
+                                                        {p.kd.toFixed(2)}
                                                     </span>
                                                 </td>
                                                 <td className="py-2.5 px-2 text-center text-xs text-neutral-500">
@@ -1308,8 +1677,8 @@ export default function AnalysisPage() {
                                             <div
                                                 key={log.id}
                                                 className={`flex items-center gap-3 px-3 py-2 text-xs border transition-all ${log.is_undone
-                                                        ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
-                                                        : 'border-neutral-700 bg-neutral-800/50'
+                                                    ? 'border-neutral-800 bg-neutral-900/30 opacity-50'
+                                                    : 'border-neutral-700 bg-neutral-800/50'
                                                     }`}
                                             >
                                                 <span className="text-neutral-600 w-5 shrink-0">{idx + 1}</span>
@@ -1386,8 +1755,8 @@ export default function AnalysisPage() {
                                             key={m.key}
                                             onClick={() => setChartMetric(m.key)}
                                             className={`px-4 py-2 text-xs font-bold border-2 transition-all ${chartMetric === m.key
-                                                    ? "border-current text-black"
-                                                    : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                                ? "border-current text-black"
+                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                                 }`}
                                             style={chartMetric === m.key ? { backgroundColor: m.color, borderColor: m.color } : {}}
                                         >
@@ -1424,8 +1793,8 @@ export default function AnalysisPage() {
                                             <button
                                                 onClick={() => setCompareDropdownOpen(v => !v)}
                                                 className={`px-3 py-1.5 text-xs font-bold border-2 border-dashed transition-all ${compareDropdownOpen
-                                                        ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
-                                                        : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
+                                                    ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
+                                                    : 'border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300'
                                                     }`}
                                             >
                                                 + 添加对比玩家
@@ -1488,27 +1857,27 @@ export default function AnalysisPage() {
                                     {playerMatchData.map((d, i) => {
                                         // Find comparison players' data for this match
                                         const cpDataForMatch = comparePlayersData.map(cp => {
-                                            const found = cp.data.find(cd => cd.match.id === d.match.id);
+                                            const found = cp.data.find(cd => cd.match_id === d.match_id);
                                             return found ? { name: cp.name, color: cp.color, data: found } : null;
-                                        }).filter(Boolean) as { name: string; color: string; data: PerMatchPlayer }[];
+                                        }).filter(Boolean) as { name: string; color: string; data: TrendPoint }[];
 
                                         return (
                                             <div key={i} className="border border-neutral-800 hover:border-neutral-700 transition-colors">
                                                 {/* Primary player row */}
                                                 <div className="flex items-center gap-3 py-2 px-3 bg-neutral-900/30 text-xs">
                                                     <span className="text-neutral-600 w-5">{i + 1}</span>
-                                                    <span className="text-neutral-400 w-24 shrink-0">{formatTime(d.match.match_start_time)}</span>
+                                                    <span className="text-neutral-400 w-24 shrink-0">{formatTime(d.match_start_time)}</span>
                                                     <span className="text-white font-bold flex-1 min-w-0 truncate">
-                                                        {d.match.team_a} <span className="text-neutral-600">vs</span> {d.match.team_b}
+                                                        {d.team_a} <span className="text-neutral-600">vs</span> {d.team_b}
                                                     </span>
                                                     <div className="flex gap-4 shrink-0">
                                                         <span className="text-yellow-500" title="拿野">🪙 {d.coin_ratio.toFixed(2)}</span>
-                                                        <span className="text-orange-400" title="塔伤">🏛 {formatNum(d.stat.building_damage || 0)}</span>
-                                                        <span className="text-emerald-400" title="治疗">💊 {formatNum(d.stat.healing || 0)}</span>
+                                                        <span className="text-orange-400" title="塔伤">🏛 {formatNum(d.building_damage || 0)}</span>
+                                                        <span className="text-emerald-400" title="治疗">💊 {formatNum(d.healing || 0)}</span>
                                                         <span className="text-cyan-400" title="KD">⚔ {d.kda.toFixed(2)}</span>
                                                     </div>
                                                     <span className="text-neutral-600 w-20 text-right shrink-0">
-                                                        {d.stat.kills}/{d.stat.assists}/{d.stat.deaths}
+                                                        {d.kills}/{d.assists}/{d.deaths}
                                                     </span>
                                                 </div>
                                                 {/* Comparison player rows for same match */}
@@ -1524,12 +1893,12 @@ export default function AnalysisPage() {
                                                         <span className="flex-1" />
                                                         <div className="flex gap-4 shrink-0">
                                                             <span style={{ color: cp.color + 'cc' }} title="拿野">🪙 {cp.data.coin_ratio.toFixed(2)}</span>
-                                                            <span style={{ color: cp.color + 'cc' }} title="塔伤">🏛 {formatNum(cp.data.stat.building_damage || 0)}</span>
-                                                            <span style={{ color: cp.color + 'cc' }} title="治疗">💊 {formatNum(cp.data.stat.healing || 0)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="塔伤">🏛 {formatNum(cp.data.building_damage || 0)}</span>
+                                                            <span style={{ color: cp.color + 'cc' }} title="治疗">💊 {formatNum(cp.data.healing || 0)}</span>
                                                             <span style={{ color: cp.color + 'cc' }} title="KD">⚔ {cp.data.kda.toFixed(2)}</span>
                                                         </div>
                                                         <span style={{ color: cp.color + '99' }} className="w-20 text-right shrink-0">
-                                                            {cp.data.stat.kills}/{cp.data.stat.assists}/{cp.data.stat.deaths}
+                                                            {cp.data.kills}/{cp.data.assists}/{cp.data.deaths}
                                                         </span>
                                                     </div>
                                                 ))}
@@ -1542,108 +1911,7 @@ export default function AnalysisPage() {
                     </div>
                 )}
 
-                {/* ═══ Per-Match Breakdown ═══ */}
-                {!fetching && viewTab === 'matches' && matchAggs.length > 0 && (
-                    <PixelCard className="bg-neutral-800 space-y-3">
-                        <h3 className="text-sm font-bold text-yellow-500 uppercase border-b-2 border-yellow-500/20 pb-2">
-                            📋 逐场分析 ({matchAggs.length} 场)
-                        </h3>
 
-                        <div className="space-y-1">
-                            {matchAggs.map(({ match, avg_coin_ratio, avg_building, kda, player_count, team_a_stats, team_b_stats }) => {
-                                const isExpanded = expandedMatchId === match.id;
-                                const typeBadge = match.match_type === "排位" ? "text-blue-400 border-blue-500/30 bg-blue-500/10" :
-                                    match.match_type === "正赛" ? "text-red-400 border-red-500/30 bg-red-500/10" :
-                                        "text-green-400 border-green-500/30 bg-green-500/10";
-
-                                return (
-                                    <div key={match.id} className="border border-neutral-700 overflow-hidden">
-                                        {/* Match row header */}
-                                        <button
-                                            onClick={() => setExpandedMatchId(isExpanded ? null : match.id)}
-                                            className="w-full flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 text-left hover:bg-white/5 transition-colors"
-                                        >
-                                            <span className="text-neutral-600 text-xs shrink-0">{isExpanded ? '▼' : '▶'}</span>
-
-                                            {/* Mobile layout: stacked */}
-                                            <div className="flex-1 min-w-0 md:contents">
-                                                {/* Time + type badge — stacked on mobile, inline on desktop */}
-                                                <div className="flex items-center gap-2 mb-1 md:mb-0 md:contents">
-                                                    <span className="text-[11px] text-neutral-400 shrink-0 md:w-24">
-                                                        {formatTime(match.match_start_time)}
-                                                    </span>
-                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold border shrink-0 ${typeBadge}`}>
-                                                        {match.match_type || '排位'}
-                                                    </span>
-                                                </div>
-                                                {/* Teams */}
-                                                <div className="flex items-center gap-2 justify-between md:contents">
-                                                    <span className="text-white text-xs font-bold min-w-0 truncate md:flex-1">
-                                                        {match.team_a} <span className="text-neutral-600">vs</span> {match.team_b}
-                                                    </span>
-                                                    {/* Mobile: winner + stats combined */}
-                                                    <div className="flex items-center gap-2 shrink-0 md:hidden">
-                                                        {match.winner && match.winner !== 'draw' && (
-                                                            <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5">
-                                                                🏆 {match.winner.length > 4 ? match.winner.slice(0, 4) + '..' : match.winner}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-neutral-500 text-[11px]">{player_count}人</span>
-                                                    </div>
-                                                </div>
-                                                {/* Mobile: agg stats row */}
-                                                <div className="flex gap-3 mt-1 text-[11px] md:hidden">
-                                                    <span className="text-yellow-500">🪙{avg_coin_ratio.toFixed(2)}</span>
-                                                    <span className="text-orange-400">🏛{formatNum(avg_building)}</span>
-                                                    <span className="text-cyan-400">⚔{kda.toFixed(2)}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Desktop-only: winner, agg stats, player count */}
-                                            {match.winner && match.winner !== 'draw' && (
-                                                <span className="hidden md:inline text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 shrink-0">
-                                                    🏆 {match.winner}
-                                                </span>
-                                            )}
-                                            <div className="hidden md:flex gap-3 shrink-0 text-xs">
-                                                <span className="text-yellow-500">🪙 {avg_coin_ratio.toFixed(2)}</span>
-                                                <span className="text-orange-400">🏛 {formatNum(avg_building)}</span>
-                                                <span className="text-cyan-400">⚔ {kda.toFixed(2)}</span>
-                                            </div>
-                                            <span className="hidden md:inline text-neutral-600 text-xs w-10 text-right shrink-0">
-                                                {player_count}人
-                                            </span>
-                                        </button>
-
-
-                                        {/* Expanded detail */}
-                                        {isExpanded && (
-                                            <div className="border-t border-neutral-700 bg-neutral-900/50 px-4 py-3 space-y-4">
-                                                {[
-                                                    { name: match.team_a, stats: team_a_stats },
-                                                    { name: match.team_b, stats: team_b_stats },
-                                                ].map(({ name, stats: tStats }) => {
-                                                    if (tStats.length === 0) return null;
-                                                    return (
-                                                        <DetailTable
-                                                            key={name}
-                                                            teamName={name}
-                                                            stats={tStats}
-                                                            coinValue={match.coin_value || 720}
-                                                            sort={detailSort}
-                                                            onSort={(k) => setDetailSort(toggleSort(detailSort, k))}
-                                                            formatNum={formatNum}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </PixelCard>
-                )}
             </div>
 
             {/* Footer */}

@@ -2,7 +2,7 @@
 
 > **数据库**: Supabase (PostgreSQL)  
 > **表前缀**: `baiyezhan_`  
-> **最后更新**: 2026-04-11  
+> **最后更新**: 2026-04-28  
 > **Schema**: `public`
 
 ---
@@ -51,9 +51,25 @@
                  │ id (uuid)
                  ▼ match_id
       ┌──────────────────────────┐
-      │ baiyezhan_match_stats   │  个人战绩 (Player 级别)
-      │ (每人每局数据)             │
-      └──────────────────────────┘
+       │ baiyezhan_match_stats   │  个人战绩 (Player 级别)
+       │ (每人每局数据)             │
+       └──────────────────────────┘
+
+       ┌───────── baiye_id ─────────┐
+       │                            │
+       ▼                            ▼
+  ┌──────────────────────┐   ┌──────────────────────┐
+  │ baiyezhan_feedback   │   │ baiyezhan_todos      │
+  │ (玩家反馈)             │   │ (优化计划ToDo)        │
+  └──────────────────────┘   └──────────────────────┘
+
+       ┌───────── match_id + baiye_id ─────────┐
+       │                                       │
+       ▼                                       │
+  ┌─────────────────────────────┐               │
+  │ baiyezhan_match_ai_analysis │               │
+  │ (AI战术分析缓存)              │               │
+  └─────────────────────────────┘               │
 ```
 
 ---
@@ -185,6 +201,8 @@
 | `match_start_time` | `timestamptz` | — | `NULL` | 对战开始时间 |
 | `match_date` | `timestamptz` | — | `now()` | 对战日期（触发器自动同步为 `match_start_time`） |
 | `notes` | `text` | — | `NULL` | 备注 |
+| `big_dragon_team` | `text` | — | `NULL` | 拿到大龙的百业名称，NULL 表示无人拿到 |
+| `small_dragon_team` | `text` | — | `NULL` | 拿到小龙的百业名称，NULL 表示无人拿到 |
 | `screenshot_urls` | `text[]` | — | `NULL` | 原始截图 URL 数组 |
 | `created_by` | `uuid` | FK → `baiyezhan_users(id)` ON DELETE SET NULL | `NULL` | 上传者 ID |
 | `created_at` | `timestamptz` | NOT NULL | `now()` | 录入时间 |
@@ -267,6 +285,92 @@
 
 ---
 
+### 10. `baiyezhan_feedback` — 玩家反馈表
+
+> 收集百业战玩家的体验反馈。支持未登录用户匿名提交，支持已登录用户选择匿名。
+
+| 列名 | 类型 | 约束 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `id` | `uuid` | **PK** | `gen_random_uuid()` | 反馈唯一 ID |
+| `baiye_id` | `uuid` | NOT NULL, FK → `baiyezhan_baiye(id)` ON DELETE CASCADE | — | 所属百业 |
+| `worst_experience` | `text` | NOT NULL | — | 最不好的体验（必填） |
+| `improvement_suggestion` | `text` | NOT NULL | — | 最需要优化的建议（必填） |
+| `good_parts` | `text` | — | `NULL` | 做得好的地方（可选） |
+| `player_role` | `text` | CHECK (`指挥`, `打手`, `后勤`, `其他`) | `NULL` | 玩家身份（可选） |
+| `is_anonymous` | `boolean` | NOT NULL | `false` | 是否匿名提交 |
+| `user_id` | `uuid` | FK → `baiyezhan_users(id)` ON DELETE SET NULL | `NULL` | 提交者（匿名/未登录时为 NULL） |
+| `user_name` | `text` | — | `NULL` | 提交时角色名快照 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 创建时间 |
+
+**索引**:
+- `idx_feedback_baiye` — 按百业查询
+- `idx_feedback_created` — 按百业+时间范围查询（供 AI 批量总结使用）
+- `idx_feedback_user` — 按用户查询
+
+**设计说明**:
+- 支持**未登录用户提交**：`user_id` 和 `user_name` 为 NULL，`is_anonymous` 强制为 true
+- 已登录用户可选择匿名：匿名时 `user_id`/`user_name` 置 NULL
+- 数据通过 `baiye_id` 隔离，不同百业的反馈互不干扰
+
+---
+
+### 11. `baiyezhan_todos` — 优化计划 ToDo 表
+
+> 存储由 AI 批量分析反馈后生成的结构化优化计划，管理员可管理状态。
+
+| 列名 | 类型 | 约束 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `id` | `uuid` | **PK** | `gen_random_uuid()` | ToDo 唯一 ID |
+| `baiye_id` | `uuid` | NOT NULL, FK → `baiyezhan_baiye(id)` ON DELETE CASCADE | — | 所属百业 |
+| `title` | `text` | NOT NULL | — | 优化标题 |
+| `description` | `text` | — | `NULL` | 问题描述与解决方向 |
+| `priority` | `text` | NOT NULL, CHECK (`high`, `medium`, `low`) | `'medium'` | 优先级 |
+| `status` | `text` | NOT NULL, CHECK (`todo`, `doing`, `done`) | `'todo'` | 当前状态 |
+| `batch_time_start` | `timestamptz` | — | `NULL` | 本批次反馈起始时间 |
+| `batch_time_end` | `timestamptz` | — | `NULL` | 本批次反馈截止时间 |
+| `created_by` | `uuid` | FK → `baiyezhan_users(id)` ON DELETE SET NULL | `NULL` | 创建者（管理员） |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 创建时间 |
+| `updated_at` | `timestamptz` | NOT NULL | `now()` | 最后更新时间 |
+
+**索引**:
+- `idx_todos_baiye` — 按百业查询
+- `idx_todos_status` — 按百业+状态查询
+- `idx_todos_created` — 按百业+时间查询
+
+**触发器**:
+- `trg_todos_updated_at` — UPDATE 时自动更新 `updated_at` 字段
+
+---
+
+### 12. `baiyezhan_match_ai_analysis` — AI 战术分析缓存表
+
+> 存储每场对战的 AI 生成战术分析结果。使用 UNIQUE(match_id, baiye_id) 约束，支持 upsert 重新生成。
+
+| 列名 | 类型 | 约束 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `id` | `uuid` | **PK** | `gen_random_uuid()` | 记录唯一 ID |
+| `match_id` | `uuid` | NOT NULL | — | 对战 ID |
+| `baiye_id` | `uuid` | NOT NULL, FK → `baiyezhan_baiye(id)` ON DELETE CASCADE | — | 所属百业 |
+| `analysis_text` | `text` | NOT NULL | — | AI 生成的战术分析文本 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 首次生成时间 |
+| `updated_at` | `timestamptz` | NOT NULL | `now()` | 最后更新时间（重新生成时更新） |
+
+**唯一约束**: `UNIQUE(match_id, baiye_id)` — 每场对战每个百业只存储一条分析
+
+**索引**:
+- `idx_match_ai_analysis_match` — 按对战 ID 查询
+- `idx_match_ai_analysis_baiye` — 按百业 ID 查询
+
+**触发器**:
+- `trg_match_ai_analysis_updated_at` — UPDATE 时自动更新 `updated_at` 字段
+
+**设计说明**:
+- 展开对战详情时自动检查是否已有保存的分析，有则直接回显
+- 用户点击「重新生成」时通过 upsert 覆盖旧分析
+- RLS 开放读写（与 todos 表一致），权限控制在应用层
+
+---
+
 ## 🔐 行级安全策略 (RLS)
 
 
@@ -288,6 +392,15 @@
 | `baiyezhan_match_stats` | Public read access | SELECT | 所有人可读战绩 |
 | `baiyezhan_match_stats` | Authenticated insert access | INSERT | 认证用户可录入战绩 |
 | `baiyezhan_match_stats` | Admin or owner delete | DELETE | Admin/VIP 或百业创建者可删除 |
+| `baiyezhan_feedback` | Public read feedback | SELECT | 所有人可读反馈 |
+| `baiyezhan_feedback` | Public insert feedback | INSERT | 任何人可提交（含未登录用户） |
+| `baiyezhan_todos` | Public read todos | SELECT | 所有人可读 ToDo |
+| `baiyezhan_todos` | Authenticated insert todos | INSERT | 认证用户可创建（API 层面限 admin） |
+| `baiyezhan_todos` | Authenticated update todos | UPDATE | 认证用户可更新（API 层面限 admin） |
+| `baiyezhan_todos` | Authenticated delete todos | DELETE | 认证用户可删除（API 层面限 admin） |
+| `baiyezhan_match_ai_analysis` | Public read match ai analysis | SELECT | 所有人可读 AI 分析 |
+| `baiyezhan_match_ai_analysis` | Public insert match ai analysis | INSERT | 任何人可创建分析（API 层面限触发） |
+| `baiyezhan_match_ai_analysis` | Public update match ai analysis | UPDATE | 任何人可更新分析（支持重新生成） |
 | `storage.objects` | Allow authenticated uploads to baiyezhan | INSERT | 认证用户可上传到 `baiyezhan` 桶 |
 | `storage.objects` | Public read access to baiyezhan | SELECT | 公开读取 `baiyezhan` 桶 |
 
@@ -367,6 +480,11 @@ baiyezhan_baiye.id      ──→ baiyezhan_matches.baiye_id        (CASCADE)
 baiyezhan_matches.id    ──→ baiyezhan_match_stats.match_id    (CASCADE)
 baiyezhan_rooms.id      ──→ baiyezhan_room_state.room_id      (CASCADE)
 baiyezhan_rooms.id      ──→ baiyezhan_room_members.room_id    (CASCADE)
+baiyezhan_baiye.id      ──→ baiyezhan_feedback.baiye_id       (CASCADE)
+baiyezhan_users.id      ──→ baiyezhan_feedback.user_id        (SET NULL)
+baiyezhan_baiye.id      ──→ baiyezhan_todos.baiye_id          (CASCADE)
+baiyezhan_users.id      ──→ baiyezhan_todos.created_by        (SET NULL)
+baiyezhan_baiye.id      ──→ baiyezhan_match_ai_analysis.baiye_id (CASCADE)
 ```
 
 ---
@@ -388,19 +506,25 @@ baiyezhan_rooms.id      ──→ baiyezhan_room_members.room_id    (CASCADE)
 | 10 | `010_add_matches_table.sql` | 2026-04-11 | 新增对战记录表 (matches)，重构 match_stats FK 指向 matches |
 | 11 | `011_add_match_times.sql` | 2026-04-11 | 为 matches 表添加 start/end time，触发器自动同步 match_date |
 | 12 | `012_redesign_matches.sql` | 2026-04-11 | 对称重设计：team_a/team_b/match_key 去重，winner 替代 result |
+| 15 | `015_add_feedback_and_todos.sql` | 2026-04-28 | 新增玩家反馈表和优化计划ToDo表，构建反馈闭环系统 |
+| 20 | `020_add_match_ai_analysis.sql` | 2026-04-28 | 新增 AI 战术分析缓存表，支持保存和重新生成 |
 
 ---
 
 ## 🎮 角色权限矩阵
 
-| 操作 | `user` | `vip` | `admin` |
-|---|---|---|---|
-| 创建百业 | ❌ | ✅ (上限 1) | ✅ (无限) |
-| 创建房间 | ❌ | ✅ (上限 4) | ✅ (无限) |
-| 加入房间 | ✅ | ✅ | ✅ |
-| 录入对战 | ✅ | ✅ | ✅ |
-| 修改/删除对战 | ❌ | ✅ (百业主) | ✅ |
-| 录入战绩 | ✅ | ✅ | ✅ |
-| 删除战绩 | ❌ | ✅ (百业主) | ✅ |
-| 删除留言 | 仅自己的 | 任意 | 任意 |
-| 管理用户 | ❌ | ❌ | ✅ |
+| 操作 | `user` | `vip` | `admin` | 未登录 |
+|---|---|---|---|---|
+| 创建百业 | ❌ | ✅ (上限 1) | ✅ (无限) | ❌ |
+| 创建房间 | ❌ | ✅ (上限 4) | ✅ (无限) | ❌ |
+| 加入房间 | ✅ | ✅ | ✅ | ❌ |
+| 录入对战 | ✅ | ✅ | ✅ | ❌ |
+| 修改/删除对战 | ❌ | ✅ (百业主) | ✅ | ❌ |
+| 录入战绩 | ✅ | ✅ | ✅ | ❌ |
+| 删除战绩 | ❌ | ✅ (百业主) | ✅ | ❌ |
+| 删除留言 | 仅自己的 | 任意 | 任意 | ❌ |
+| 提交反馈 | ✅ | ✅ | ✅ | ✅ (匿名) |
+| 触发AI总结 | ❌ | ❌ | ✅ | ❌ |
+| 管理ToDo状态 | ❌ | ❌ | ✅ | ❌ |
+| 查看ToDo | ✅ | ✅ | ✅ | ❌ |
+| 管理用户 | ❌ | ❌ | ✅ | ❌ |

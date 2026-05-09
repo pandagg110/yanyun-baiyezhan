@@ -72,14 +72,14 @@ function formatNum(n: number) {
 function getTitle(p: PlayerAgg): string {
     if (p.matches_played === 0) return "无名之辈";
 
-    const K  = p.avg_kills;           // 场均击杀
-    const D  = p.avg_deaths;          // 场均死亡
-    const A  = p.avg_assists;         // 场均助攻
+    const K = p.avg_kills;           // 场均击杀
+    const D = p.avg_deaths;          // 场均死亡
+    const A = p.avg_assists;         // 场均助攻
     const DMG = p.avg_damage;         // 场均对玩家伤害
     const HEL = p.avg_healing;        // 场均治疗
     const BLD = p.avg_building;       // 场均塔伤
     const TKN = p.avg_damage_taken;   // 场均承伤
-    const CR  = p.avg_coin_ratio;     // 场均拿野比例
+    const CR = p.avg_coin_ratio;     // 场均拿野比例
 
     // 奇迹行者：拿野极强
     if (CR >= 0.9) return "奇迹行者";
@@ -261,7 +261,7 @@ export default function CardGeneratorPage() {
         for (const s of ourStats) {
             const m = matchMap.get(s.match_id);
             if (!m) continue;
-            const coinVal = m.coin_value || 720;
+            const coinVal = m.coin_value || 792;
             const ratio = coinVal > 0 ? (s.coins || 0) / coinVal : 0;
 
             if (!agg.has(s.player_name)) {
@@ -431,8 +431,8 @@ export default function CardGeneratorPage() {
                                         key={t}
                                         onClick={() => { setMatchType(t); setGenerated(false); }}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${matchType === t
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {t}
@@ -448,8 +448,8 @@ export default function CardGeneratorPage() {
                                         key={p.value}
                                         onClick={() => { setPeriod(p.value); setGenerated(false); }}
                                         className={`flex-1 py-2 text-xs font-bold border-2 transition-all ${period === p.value
-                                                ? "bg-yellow-500 border-yellow-600 text-black"
-                                                : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
+                                            ? "bg-yellow-500 border-yellow-600 text-black"
+                                            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:border-neutral-500"
                                             }`}
                                     >
                                         {p.label}
@@ -587,9 +587,9 @@ export default function CardGeneratorPage() {
                                     {/* Stats Grid */}
                                     {activeModules.length > 0 && (
                                         <div className={`grid gap-2 mb-4 ${activeModules.length <= 2 ? 'grid-cols-2' :
-                                                activeModules.length === 3 ? 'grid-cols-3' :
-                                                    activeModules.length === 4 ? 'grid-cols-2' :
-                                                        'grid-cols-3'
+                                            activeModules.length === 3 ? 'grid-cols-3' :
+                                                activeModules.length === 4 ? 'grid-cols-2' :
+                                                    'grid-cols-3'
                                             }`}>
                                             {activeModules.map(mod => (
                                                 <div
@@ -639,8 +639,8 @@ export default function CardGeneratorPage() {
                                 <button
                                     onClick={handleCopy}
                                     className={`px-5 py-2.5 text-xs font-bold border-2 transition-all ${copySuccess
-                                            ? "bg-green-500 border-green-600 text-black"
-                                            : "bg-neutral-800 border-neutral-600 text-white hover:border-yellow-500 hover:text-yellow-500"
+                                        ? "bg-green-500 border-green-600 text-black"
+                                        : "bg-neutral-800 border-neutral-600 text-white hover:border-yellow-500 hover:text-yellow-500"
                                         }`}
                                 >
                                     {copySuccess ? "✅ 已复制" : "📋 复制图片"}
@@ -674,8 +674,8 @@ export default function CardGeneratorPage() {
                                             key={mod.key}
                                             onClick={() => toggleStat(mod.key)}
                                             className={`w-full flex items-center gap-3 px-3 py-2 border-2 text-left transition-all ${isOn
-                                                    ? "border-current bg-current/5"
-                                                    : "border-neutral-700 bg-neutral-800 hover:border-neutral-600"
+                                                ? "border-current bg-current/5"
+                                                : "border-neutral-700 bg-neutral-800 hover:border-neutral-600"
                                                 }`}
                                             style={isOn ? { borderColor: mod.color + "60", color: mod.color } : {}}
                                         >
@@ -689,8 +689,8 @@ export default function CardGeneratorPage() {
                                                 </span>
                                             )}
                                             <span className={`w-5 h-5 border-2 flex items-center justify-center text-[10px] font-bold ${isOn
-                                                    ? "border-current bg-current text-black"
-                                                    : "border-neutral-600"
+                                                ? "border-current bg-current text-black"
+                                                : "border-neutral-600"
                                                 }`}
                                                 style={isOn ? { backgroundColor: mod.color, borderColor: mod.color } : {}}
                                             >
@@ -707,8 +707,8 @@ export default function CardGeneratorPage() {
                             onClick={handleGenerate}
                             disabled={generating}
                             className={`w-full py-3.5 text-sm font-black uppercase tracking-wider border-3 transition-all ${generating
-                                    ? "bg-neutral-700 border-neutral-600 text-neutral-500 cursor-not-allowed"
-                                    : "bg-gradient-to-r from-yellow-500 to-amber-500 border-yellow-600 text-black hover:from-yellow-400 hover:to-amber-400 hover:shadow-[0_0_20px_rgba(250,204,21,0.3)]"
+                                ? "bg-neutral-700 border-neutral-600 text-neutral-500 cursor-not-allowed"
+                                : "bg-gradient-to-r from-yellow-500 to-amber-500 border-yellow-600 text-black hover:from-yellow-400 hover:to-amber-400 hover:shadow-[0_0_20px_rgba(250,204,21,0.3)]"
                                 }`}
                             style={{ borderWidth: "3px" }}
                         >

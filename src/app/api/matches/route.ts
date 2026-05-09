@@ -132,7 +132,8 @@ export async function POST(request: NextRequest) {
         // ─── Mode 1: Create or find match ───
         const {
             team_a, team_b, match_start_time, match_type, coin_value,
-            winner, baiye_id, notes, created_by,
+            winner, baiye_id, notes, created_by, roster_id,
+            big_dragon_team, small_dragon_team,
         } = body;
 
         if (!team_a || !team_b || !match_start_time) {
@@ -176,10 +177,13 @@ export async function POST(request: NextRequest) {
                 team_b,
                 match_start_time: new Date(match_start_time).toISOString(),
                 match_type: match_type || '排位',
-                coin_value: coin_value ?? 720,
+                coin_value: coin_value ?? 792,
                 winner: winner || null,
                 notes: notes || null,
+                roster_id: roster_id || null,
                 created_by: created_by || null,
+                big_dragon_team: big_dragon_team || null,
+                small_dragon_team: small_dragon_team || null,
             })
             .select()
             .single();

@@ -5,7 +5,7 @@ import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
 import { recognizeScreenshots, OcrPlayer } from "@/services/ocr-service";
 import { SupabaseService } from "@/services/supabase-service";
-import { Baiye, Match, User } from "@/types/app";
+import { Baiye, Match, Roster, User } from "@/types/app";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -54,8 +54,12 @@ export default function StatsUploadPage() {
     );
     const [winner, setWinner] = useState<string | null>(null);
     const [matchType, setMatchType] = useState("排位");
-    const [coinValue, setCoinValue] = useState(720);
+    const [coinValue, setCoinValue] = useState(792);
     const [notes, setNotes] = useState("");
+    const [bigDragonTeam, setBigDragonTeam] = useState<string | null>(null);
+    const [smallDragonTeam, setSmallDragonTeam] = useState<string | null>(null);
+    const [rosters, setRosters] = useState<Roster[]>([]);
+    const [selectedRosterId, setSelectedRosterId] = useState<string>("");
 
     const [isChecking, setIsChecking] = useState(false);
     const [checkError, setCheckError] = useState<string | null>(null);
@@ -92,6 +96,16 @@ export default function StatsUploadPage() {
             if (!b) { router.push("/baiye"); return; }
             setBaiye(b);
             setTeamA(b.name);
+
+            // Load rosters for this baiye
+            try {
+                const rosterList = await SupabaseService.getRosters(baiyeId);
+                setRosters(rosterList);
+                if (rosterList.length > 0) {
+                    setSelectedRosterId(rosterList[0].id); // default to latest
+                }
+            } catch { /* ignore */ }
+
             setLoading(false);
         };
         init();
@@ -154,7 +168,10 @@ export default function StatsUploadPage() {
                     winner: winner,
                     baiye_id: baiyeId,
                     notes: notes.trim() || undefined,
+                    roster_id: selectedRosterId || undefined,
                     created_by: user?.id,
+                    big_dragon_team: bigDragonTeam,
+                    small_dragon_team: smallDragonTeam,
                 }),
             });
 
@@ -399,12 +416,12 @@ export default function StatsUploadPage() {
                                 <input
                                     type="number"
                                     value={coinValue}
-                                    onChange={(e) => setCoinValue(Number(e.target.value) || 720)}
+                                    onChange={(e) => setCoinValue(Number(e.target.value) || 792)}
                                     min={0}
                                     step={10}
                                     className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
                                 />
-                                <p className="text-[10px] text-neutral-600">默认720，后续可能调整</p>
+                                <p className="text-[10px] text-neutral-600">默认792，后续可能调整</p>
                             </div>
 
                             <div className="space-y-2">
@@ -440,6 +457,56 @@ export default function StatsUploadPage() {
                                         🤝 平局
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* 大龙/小龙 */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
+                                    🐉 目标击杀
+                                </label>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setBigDragonTeam(bigDragonTeam ? null : teamA.trim())}
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${bigDragonTeam
+                                                ? "bg-purple-500 border-purple-600 text-white shadow-[2px_2px_0_0_#000]"
+                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                            }`}
+                                    >
+                                        {bigDragonTeam ? "✅" : "❌"} 大龙
+                                    </button>
+                                    <button
+                                        onClick={() => setSmallDragonTeam(smallDragonTeam ? null : teamA.trim())}
+                                        className={`flex-1 py-3 text-sm font-bold border-2 transition-all ${smallDragonTeam
+                                                ? "bg-blue-500 border-blue-600 text-white shadow-[2px_2px_0_0_#000]"
+                                                : "bg-neutral-700 text-neutral-400 border-neutral-600 hover:border-neutral-500"
+                                            }`}
+                                    >
+                                        {smallDragonTeam ? "✅" : "❌"} 小龙
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-neutral-600">我方是否拿到大龙/小龙</p>
+                            </div>
+
+                            {/* 排表关联 */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">
+                                    📋 关联排表
+                                </label>
+                                <select
+                                    value={selectedRosterId}
+                                    onChange={(e) => setSelectedRosterId(e.target.value)}
+                                    className="w-full bg-neutral-900 border-2 border-neutral-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                >
+                                    <option value="">不关联排表</option>
+                                    {rosters.map((r) => (
+                                        <option key={r.id} value={r.id}>
+                                            {r.roster_date} — {r.name || '未命名'}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-neutral-600">
+                                    关联后可在对战记录中快速查看当日排表
+                                </p>
                             </div>
 
                             <div>

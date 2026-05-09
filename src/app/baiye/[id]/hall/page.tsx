@@ -230,8 +230,30 @@ export default function BaiyeHallPage() {
                             >
                                 📈 对战分析
                             </button>
+                            <button
+                                onClick={() => router.push(`/baiye/${baiyeId}/roster`)}
+                                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm border-2 border-emerald-700 hover:from-emerald-500 hover:to-teal-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                            >
+                                📋 排表工具
+                            </button>
                         </div>
                     </PixelCard>
+
+                    {/* Improvement Hub Navigation */}
+                    <button
+                        onClick={() => router.push(`/baiye/${baiyeId}/improvement`)}
+                        className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-sm border-4 border-black hover:from-purple-500 hover:to-indigo-500 transition-all shadow-[4px_4px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                    >
+                        🔧 战术改进中心
+                    </button>
+
+                    {/* Feedback Button - standalone page for all players (supports unauthenticated) */}
+                    <button
+                        onClick={() => router.push(`/baiye/${baiyeId}/feedback`)}
+                        className="w-full py-3 bg-gradient-to-r from-pink-600 to-rose-600 text-white font-bold text-sm border-4 border-black hover:from-pink-500 hover:to-rose-500 transition-all shadow-[4px_4px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                    >
+                        📝 战后反馈（玩家通道）
+                    </button>
 
                     {/* Create Room - Only for VIP/Admin */}
                     {canCreateRoom && (
@@ -448,6 +470,7 @@ export default function BaiyeHallPage() {
             <div className="w-full max-w-6xl mx-auto mt-12 mb-8">
                 <Guestbook type="baiye" targetId={baiyeId} />
             </div>
+
         </main >
     );
 }

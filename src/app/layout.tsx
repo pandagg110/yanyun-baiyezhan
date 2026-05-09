@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Silkscreen } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { GlobalChatWidget } from "@/components/feature/global-chat-widget";
 
 const pixelFont = Silkscreen({
   weight: ["400"],
@@ -28,6 +29,7 @@ export default function RootLayout({
         )}
       >
         {children}
+        <GlobalChatWidget />
       </body>
     </html>
   );

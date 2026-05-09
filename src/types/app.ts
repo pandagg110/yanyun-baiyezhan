@@ -87,8 +87,11 @@ export interface Match {
     match_start_time?: string;  // 对战开始时间
     match_date?: string;        // auto-synced from match_start_time
     match_type?: string;        // 约战 | 正赛 | 排位 (default)
-    coin_value?: number;         // 逗币基数，默认720
+    coin_value?: number;         // 逗币基数，默认792
+    big_dragon_team?: string | null;    // 拿到大龙的百业名称
+    small_dragon_team?: string | null;  // 拿到小龙的百业名称
     notes?: string;
+    roster_id?: string;             // 关联排表 ID
     screenshot_urls?: string[];
     created_by?: string;
     created_at: string;
@@ -140,4 +143,109 @@ export interface MatchScreenshot {
     image_url: string;
     uploaded_by?: string;
     created_at: string;
+}
+
+// ──────────────────────────────────────
+// Feedback & ToDo System (反馈闭环系统)
+// ──────────────────────────────────────
+
+/** 玩家反馈 */
+export interface Feedback {
+    id: string;
+    baiye_id: string;
+    worst_experience?: string;
+    improvement_suggestion: string;
+    good_parts?: string;
+    player_role?: '防守' | '进攻';
+    is_anonymous: boolean;
+    user_id?: string;
+    user_name?: string;
+    created_at: string;
+}
+
+/** ToDo 优化计划 */
+export interface Todo {
+    id: string;
+    baiye_id: string;
+    title: string;
+    description?: string;
+    priority: 'high' | 'medium' | 'low';
+    status: 'todo' | 'doing' | 'done';
+    batch_time_start?: string;
+    batch_time_end?: string;
+    keywords?: string[];
+    reopen_count?: number;
+    related_match_ids?: string[];
+    created_by?: string;
+    created_at: string;
+    updated_at?: string;
+}
+
+// ──────────────────────────────────────
+// Roster System (排表系统)
+// ──────────────────────────────────────
+
+/** 人员池成员 */
+export interface RosterMember {
+    id: string;
+    baiye_id: string;
+    name: string;
+    created_at: string;
+}
+
+/** 下拉选项 */
+export interface RosterOption {
+    id: string;
+    baiye_id: string;
+    category: string;
+    label: string;
+    color?: string | null;
+    sort_order: number;
+}
+
+/** 单元格 */
+export interface RosterCell {
+    text: string;
+    color?: string | null;
+}
+
+/** 小队成员行 */
+export interface RosterSquadMember {
+    name: string;
+    isLeader?: boolean;
+    cells: RosterCell[];
+}
+
+/** 小队 */
+export interface RosterSquad {
+    members: RosterSquadMember[];
+    colorNote?: string;
+    timeNote?: string;
+}
+
+/** 人墙塔位 */
+export interface WallTower {
+    name: string;       // 上塔 / 中塔 / 下塔
+    members: string[];  // max 3 names
+}
+
+/** 排表数据（JSONB 结构） — 行=成员，列=阶段，格=战术指令 */
+export interface RosterData {
+    columns: string[];              // 防守列 (backward compat)
+    attackColumns?: string[];       // 进攻列 (新增，独立于防守)
+    attack: RosterSquad[];
+    defense: RosterSquad[];
+    wall: WallTower[];
+}
+
+/** 排表记录 */
+export interface Roster {
+    id: string;
+    baiye_id: string;
+    name: string;
+    roster_date: string;
+    roster_data: RosterData;
+    created_by?: string;
+    created_at: string;
+    updated_at?: string;
 }
