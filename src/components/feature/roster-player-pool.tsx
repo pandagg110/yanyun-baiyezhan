@@ -126,10 +126,10 @@ export function RosterPlayerPool({
                         const isEditingThis = editingId === member.id;
                         return (
                             <div key={member.id}
-                                draggable={isAdmin && !isEditingThis && !isAssigned}
+                                draggable={isAdmin && !isEditingThis}
                                 onDragStart={(e) => handleDragStart(e, member.name)}
                                 className={`group flex items-center justify-between px-1.5 py-1 border-2 text-[11px] transition-all
-                                    ${isAdmin && !isEditingThis && !isAssigned ? "cursor-grab active:cursor-grabbing" : "cursor-default"}
+                                    ${isAdmin && !isEditingThis ? "cursor-grab active:cursor-grabbing" : "cursor-default"}
                                     ${isAssigned
                                         ? "border-neutral-700/50 bg-neutral-800/30 text-neutral-600"
                                         : "border-neutral-600 bg-neutral-700 text-white hover:border-cyan-500/50"}`}>
