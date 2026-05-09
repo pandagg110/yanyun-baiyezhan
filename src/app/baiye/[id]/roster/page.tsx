@@ -242,7 +242,18 @@ export default function RosterPage() {
         try {
             const m = await SupabaseService.addRosterMember(baiyeId, name);
             setMembers((prev) => [...prev, m].sort((a, b) => a.name.localeCompare(b.name)));
-        } catch { /* ignore */ }
+        } catch (err: any) {
+            // If UNIQUE conflict (23505), the member already exists in DB — fetch and add to local state
+            if (err?.code === '23505') {
+                try {
+                    const existing = await SupabaseService.getRosterMembers(baiyeId);
+                    const found = existing.find((m) => m.name === name.trim());
+                    if (found && !members.some((m) => m.id === found.id)) {
+                        setMembers((prev) => [...prev, found].sort((a, b) => a.name.localeCompare(b.name)));
+                    }
+                } catch { /* ignore */ }
+            }
+        }
     };
     const handleRemoveMember = async (id: string) => {
         try { await SupabaseService.removeRosterMember(id); setMembers((prev) => prev.filter((m) => m.id !== id)); }
@@ -263,10 +274,37 @@ export default function RosterPage() {
         }
     };
     const handleRenameMember = async (id: string, newName: string) => {
+        const trimmed = newName.trim();
+        if (!trimmed) return;
+        const oldMember = members.find((m) => m.id === id);
+        const oldName = oldMember?.name ?? '';
         try {
-            await SupabaseService.removeRosterMember(id);
-            const m = await SupabaseService.addRosterMember(baiyeId, newName);
-            setMembers((prev) => prev.filter((x) => x.id !== id).concat(m).sort((a, b) => a.name.localeCompare(b.name)));
+            // Use name-based rename: DELETE old + UPSERT new
+            // This guarantees the old name is freed in DB regardless of ID state
+            const m = await SupabaseService.renameRosterMemberByName(baiyeId, oldName || '', trimmed);
+            setMembers((prev) => prev.filter((x) => x.id !== id && x.name !== oldName).concat(m).sort((a, b) => a.name.localeCompare(b.name)));
+            // Sync name change into all squad tables and wall
+            if (oldName && oldName !== trimmed) {
+                setRosterData((prev) => {
+                    const renameMembersInSquads = (squads: RosterSquad[]) =>
+                        squads.map((sq) => ({
+                            ...sq,
+                            members: sq.members.map((m) => m.name === oldName ? { ...m, name: trimmed } : m),
+                        }));
+                    const renameInWall = (wall: WallTower[]) =>
+                        wall.map((t) => ({
+                            ...t,
+                            members: t.members.map((n) => n === oldName ? trimmed : n),
+                        }));
+                    return {
+                        ...prev,
+                        attack: renameMembersInSquads(prev.attack),
+                        defense: renameMembersInSquads(prev.defense),
+                        wall: renameInWall(prev.wall),
+                    };
+                });
+                setHasChanges(true);
+            }
         } catch { /* ignore */ }
     };
 
@@ -275,41 +313,41 @@ export default function RosterPage() {
         if (!newName.trim() || oldName === newName.trim()) return;
         const trimmed = newName.trim();
 
-        // 1. Update in DB (find member by name)
-        const member = members.find((m) => m.name === oldName);
-        if (member) {
-            try {
-                await SupabaseService.renameRosterMember(member.id, trimmed);
-                setMembers((prev) => prev.map((m) => m.id === member.id ? { ...m, name: trimmed } : m).sort((a, b) => a.name.localeCompare(b.name)));
-            } catch { /* ignore - maybe duplicate */ }
-        } else {
-            // Member not in pool yet, add them
-            try {
-                const m = await SupabaseService.addRosterMember(baiyeId, trimmed);
-                setMembers((prev) => [...prev, m].sort((a, b) => a.name.localeCompare(b.name)));
-            } catch { /* ignore */ }
-        }
+        // Helper to apply the name change to rosterData
+        const applyRename = () => {
+            setRosterData((prev) => {
+                const renameMembersInSquads = (squads: RosterSquad[]) =>
+                    squads.map((sq) => ({
+                        ...sq,
+                        members: sq.members.map((m) => m.name === oldName ? { ...m, name: trimmed } : m),
+                    }));
+                const renameInWall = (wall: WallTower[]) =>
+                    wall.map((t) => ({
+                        ...t,
+                        members: t.members.map((n) => n === oldName ? trimmed : n),
+                    }));
+                return {
+                    ...prev,
+                    attack: renameMembersInSquads(prev.attack),
+                    defense: renameMembersInSquads(prev.defense),
+                    wall: renameInWall(prev.wall),
+                };
+            });
+            setHasChanges(true);
+        };
 
-        // 2. Update name in all roster data sections
-        setRosterData((prev) => {
-            const renameMembersInSquads = (squads: RosterSquad[]) =>
-                squads.map((sq) => ({
-                    ...sq,
-                    members: sq.members.map((m) => m.name === oldName ? { ...m, name: trimmed } : m),
-                }));
-            const renameInWall = (wall: WallTower[]) =>
-                wall.map((t) => ({
-                    ...t,
-                    members: t.members.map((n) => n === oldName ? trimmed : n),
-                }));
-            return {
-                ...prev,
-                attack: renameMembersInSquads(prev.attack),
-                defense: renameMembersInSquads(prev.defense),
-                wall: renameInWall(prev.wall),
-            };
-        });
-        setHasChanges(true);
+        try {
+            // Always use name-based rename: DELETE old + UPSERT new
+            // Guarantees old name is freed in DB unconditionally
+            const m = await SupabaseService.renameRosterMemberByName(baiyeId, oldName, trimmed);
+            // Update members: remove old entry (by name or id), add new
+            setMembers((prev) =>
+                prev.filter((x) => x.name !== oldName)
+                    .concat(prev.some((x) => x.name === trimmed) ? [] : [m])
+                    .sort((a, b) => a.name.localeCompare(b.name))
+            );
+            applyRename();
+        } catch { /* ignore */ }
     };
 
     // Options handlers

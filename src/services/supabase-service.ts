@@ -978,6 +978,19 @@ export const SupabaseService = {
     },
 
     /**
+     * Remove a member by name (for cases where local ID is unknown)
+     */
+    removeRosterMemberByName: async (baiyeId: string, name: string): Promise<void> => {
+        const { error } = await supabase
+            .from('baiyezhan_roster_members')
+            .delete()
+            .eq('baiye_id', baiyeId)
+            .eq('name', name.trim());
+
+        if (error) throw error;
+    },
+
+    /**
      * Rename a roster member in-place (preserves ID)
      */
     renameRosterMember: async (memberId: string, newName: string): Promise<void> => {
@@ -986,6 +999,30 @@ export const SupabaseService = {
             .update({ name: newName.trim() })
             .eq('id', memberId);
         if (error) throw error;
+    },
+
+    /**
+     * Rename by name: DELETE old name + UPSERT new name.
+     * More robust than renameRosterMember — guarantees old name is always freed
+     * regardless of whether local member ID matches DB.
+     */
+    renameRosterMemberByName: async (baiyeId: string, oldName: string, newName: string): Promise<RosterMember> => {
+        // Step 1: delete old name (free it up unconditionally)
+        await supabase
+            .from('baiyezhan_roster_members')
+            .delete()
+            .eq('baiye_id', baiyeId)
+            .eq('name', oldName.trim());
+
+        // Step 2: upsert new name (insert or return existing row)
+        const { data, error } = await supabase
+            .from('baiyezhan_roster_members')
+            .upsert({ baiye_id: baiyeId, name: newName.trim() }, { onConflict: 'baiye_id,name' })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as RosterMember;
     },
 
     /**
