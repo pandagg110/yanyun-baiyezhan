@@ -697,78 +697,7 @@ export default function AnalysisPage() {
         }
     }, [showRenameHistory, isAdmin, fetchRenameLogs]);
 
-<<<<<<< HEAD
-    // ── Compute player aggregations ──
-    const playerAggs = useMemo(() => {
-        if (stats.length === 0 || matches.length === 0) return [];
-
-        const baiyeName = baiye?.name?.trim() ?? '';
-
-        // Debug: log unique team names in stats vs baiye name
-        const uniqueTeamNames = [...new Set(stats.map(s => s.team_name))];
-        console.log('[Analysis] baiye.name:', JSON.stringify(baiyeName), 'team_names in stats:', uniqueTeamNames);
-
-        const matchMap = new Map(matches.map(m => [m.id, m]));
-        const playerMap = new Map<string, {
-            matches: Set<string>;
-            kills: number; assists: number; deaths: number;
-            coins: number; coinValues: number;
-            building: number; healing: number;
-            coinRatios: number[];
-        }>();
-
-        for (const s of stats) {
-            const m = matchMap.get(s.match_id);
-            if (!m) continue;
-            // Only count our baiye's players, skip enemy team
-            // Use trim + case-insensitive comparison to handle whitespace/casing differences
-            if (s.team_name?.trim().toLowerCase() !== baiyeName.toLowerCase()) continue;
-            const coinValue = m.coin_value || 720;
-
-            if (!playerMap.has(s.player_name)) {
-                playerMap.set(s.player_name, {
-                    matches: new Set(), kills: 0, assists: 0, deaths: 0,
-                    coins: 0, coinValues: 0, building: 0, healing: 0, coinRatios: [],
-                });
-            }
-            const p = playerMap.get(s.player_name)!;
-            p.matches.add(s.match_id);
-            p.kills += s.kills || 0;
-            p.assists += s.assists || 0;
-            p.deaths += s.deaths || 0;
-            p.coins += s.coins || 0;
-            p.coinValues += coinValue;
-            p.building += s.building_damage || 0;
-            p.healing += s.healing || 0;
-            p.coinRatios.push((s.coins || 0) / coinValue);
-        }
-
-        const result: PlayerAgg[] = [];
-        for (const [name, p] of playerMap) {
-            const n = p.matches.size;
-            result.push({
-                player_name: name,
-                matches_played: n,
-                total_kills: p.kills,
-                total_assists: p.assists,
-                total_deaths: p.deaths,
-                total_coins: p.coins,
-                total_coin_value: p.coinValues,
-                total_building_damage: p.building,
-                total_healing: p.healing,
-                avg_coin_ratio: p.coinRatios.reduce((a, b) => a + b, 0) / n,
-                avg_building: p.building / n,
-                avg_healing: p.healing / n,
-                kda: p.kills / Math.max(p.deaths, 1),
-            });
-        }
-        return result;
-    }, [stats, matches, baiye?.name]);
-
-    // Sorted player list
-=======
     // Sorted player list (playerAggs now comes from server, no need to compute)
->>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
     const sortedPlayerAggs = useMemo(() => {
         const sorted = [...playerAggs];
         const { key, dir } = playerSort;
@@ -783,34 +712,11 @@ export default function AnalysisPage() {
         return sorted;
     }, [playerAggs, playerSort]);
 
-<<<<<<< HEAD
-    // ── Per-player match data (for charts + list) ──
-    const buildPlayerMatchData = useCallback((playerName: string): PerMatchPlayer[] => {
-        const matchMap = new Map(matches.map(m => [m.id, m]));
-        const baiyeName = baiye?.name?.trim().toLowerCase() ?? '';
-        return stats
-            .filter(s => s.player_name === playerName && s.team_name?.trim().toLowerCase() === baiyeName)
-            .map(s => {
-                const m = matchMap.get(s.match_id);
-                if (!m) return null;
-                const cv = m.coin_value || 720;
-                return {
-                    match: m,
-                    stat: s,
-                    coin_ratio: (s.coins || 0) / cv,
-                    kda: (s.kills || 0) / Math.max(s.deaths || 0, 1),
-                } as PerMatchPlayer;
-            })
-            .filter(Boolean)
-            .sort((a, b) => new Date(a!.match.match_start_time!).getTime() - new Date(b!.match.match_start_time!).getTime()) as PerMatchPlayer[];
-    }, [stats, matches, baiye?.name]);
-=======
     // ── Lazy-load player trend data ──
     const fetchPlayerTrend = useCallback(async (playerName: string) => {
         if (!baiye?.name) return;
         // Skip if already cached
         if (playerTrendCache.has(playerName)) return;
->>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
 
         setTrendLoading(true);
         try {
@@ -876,41 +782,6 @@ export default function AnalysisPage() {
             .sort((a, b) => a.localeCompare(b));
     }, [selectedPlayer, comparePlayers, playerAggs]);
 
-<<<<<<< HEAD
-    // ── Per-match aggregation (for bottom section) ──
-    const matchAggs = useMemo(() => {
-        const matchMap = new Map(matches.map(m => [m.id, m]));
-        const baiyeName = baiye?.name?.trim().toLowerCase() ?? '';
-        // Group ALL stats for detail tables (both teams)
-        const allGrouped = new Map<string, MatchStat[]>();
-        for (const s of stats) {
-            if (!allGrouped.has(s.match_id)) allGrouped.set(s.match_id, []);
-            allGrouped.get(s.match_id)!.push(s);
-        }
-
-        return matches.map(m => {
-            const allStats = allGrouped.get(m.id) || [];
-            // Only our team for metric aggregations
-            const ourStats = allStats.filter(s => s.team_name?.trim().toLowerCase() === baiyeName);
-            const n = ourStats.length || 1;
-            const totalKills = ourStats.reduce((a, s) => a + (s.kills || 0), 0);
-            const totalAssists = ourStats.reduce((a, s) => a + (s.assists || 0), 0);
-            const totalDeaths = ourStats.reduce((a, s) => a + (s.deaths || 0), 0);
-            const totalCoins = ourStats.reduce((a, s) => a + (s.coins || 0), 0);
-            const totalBuilding = ourStats.reduce((a, s) => a + (s.building_damage || 0), 0);
-            const cv = m.coin_value || 720;
-
-            return {
-                match: m,
-                stats: ourStats,
-                player_count: ourStats.length,
-                avg_coin_ratio: totalCoins / n / cv,
-                avg_building: totalBuilding / n,
-                kda: totalKills / Math.max(totalDeaths, 1),
-                team_a_stats: allStats.filter(s => s.team_name === m.team_a),
-                team_b_stats: allStats.filter(s => s.team_name === m.team_b),
-            };
-=======
     // ── Lazy-load match details ──
     const fetchMatchDetail = useCallback(async (matchId: string) => {
         if (!matchId) return;
@@ -922,7 +793,6 @@ export default function AnalysisPage() {
             const next = new Map(prev);
             next.set(matchId, { match: {} as MatchDetailCache['match'], stats: [], loading: true });
             return next;
->>>>>>> 437ac5c143b1b7aef6a43029a8576139d2d82c45
         });
 
         try {
