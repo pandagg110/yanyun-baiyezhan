@@ -7,6 +7,7 @@ import {
     BarChart3,
     CalendarDays,
     Camera,
+    ChevronRight,
     CheckCircle2,
     ClipboardList,
     ImagePlus,
@@ -22,7 +23,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 function toDateInput(date: Date) {
-    return date.toISOString().slice(0, 10);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
 }
 
 function getWeekStart(value?: string) {
@@ -184,6 +188,7 @@ export default function ReplayReviewPage() {
     const [viewerWeek, setViewerWeek] = useState(getWeekStart());
     const [adminWeek, setAdminWeek] = useState(getWeekStart());
     const [activePanel, setActivePanel] = useState<"mine" | "admin">("mine");
+    const [selectedAdminTarget, setSelectedAdminTarget] = useState<string | null>(null);
 
     const [targetName, setTargetName] = useState("");
     const [reviewDate, setReviewDate] = useState(toDateInput(new Date()));
@@ -208,9 +213,12 @@ export default function ReplayReviewPage() {
         }
     };
 
-    const fetchAdminReviews = async (week = adminWeek) => {
-        const rows = await SupabaseService.getReplayReviews(baiyeId, { weekStart: week });
+    const fetchAdminReviews = async (week = adminWeek, options?: { fallbackToLatest?: boolean }) => {
+        const rows = await SupabaseService.getReplayReviews(baiyeId, { limit: 1000 });
         setAdminReviews(rows);
+        if (options?.fallbackToLatest && rows.length > 0 && !rows.some((row) => row.week_start === week)) {
+            setAdminWeek(rows[0].week_start);
+        }
     };
 
     useEffect(() => {
@@ -239,20 +247,13 @@ export default function ReplayReviewPage() {
 
             await fetchViewerReviews(currentUser);
             if (currentUser.role === "admin") {
-                await fetchAdminReviews(adminWeek);
+                await fetchAdminReviews(adminWeek, { fallbackToLatest: true });
             }
             setLoading(false);
         };
         init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [baiyeId, router]);
-
-    useEffect(() => {
-        if (isAdmin) {
-            fetchAdminReviews(adminWeek).catch((error) => console.error(error));
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [adminWeek, isAdmin]);
 
     const viewerWeeks = useMemo(
         () => [...groupByWeek(viewerReviews).keys()].sort((a, b) => b.localeCompare(a)),
@@ -275,10 +276,18 @@ export default function ReplayReviewPage() {
         });
     }, [viewerWeekMap, viewerWeeks]);
     const maxTrendPoints = Math.max(1, ...trendWeeks.map((item) => item.points));
+    const adminWeeks = useMemo(
+        () => [...new Set(adminReviews.map((review) => review.week_start))].sort((a, b) => b.localeCompare(a)),
+        [adminReviews]
+    );
+    const currentAdminReviews = useMemo(
+        () => adminReviews.filter((review) => review.week_start === adminWeek),
+        [adminReviews, adminWeek]
+    );
 
     const adminSummary = useMemo(() => {
         const map = new Map<string, { name: string; records: number; points: number; images: number; latest: string }>();
-        for (const review of adminReviews) {
+        for (const review of currentAdminReviews) {
             const current = map.get(review.target_name) || {
                 name: review.target_name,
                 records: 0,
@@ -293,7 +302,21 @@ export default function ReplayReviewPage() {
             map.set(review.target_name, current);
         }
         return [...map.values()].sort((a, b) => b.records - a.records || a.name.localeCompare(b.name, "zh-CN"));
-    }, [adminReviews]);
+    }, [currentAdminReviews]);
+    const selectedAdminReviews = useMemo(
+        () => currentAdminReviews.filter((review) => review.target_name === selectedAdminTarget),
+        [currentAdminReviews, selectedAdminTarget]
+    );
+
+    useEffect(() => {
+        if (adminSummary.length === 0) {
+            setSelectedAdminTarget(null);
+            return;
+        }
+        if (!selectedAdminTarget || !adminSummary.some((row) => row.name === selectedAdminTarget)) {
+            setSelectedAdminTarget(adminSummary[0].name);
+        }
+    }, [adminSummary, selectedAdminTarget]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
@@ -328,15 +351,18 @@ export default function ReplayReviewPage() {
                 urls.push(await SupabaseService.uploadFile(file, "screenshots"));
             }
 
+            const submittedWeek = getWeekStart(reviewDate);
+            const submittedTarget = targetName.trim();
+
             await SupabaseService.createReplayReview({
                 baiye_id: baiyeId,
-                target_name: targetName,
+                target_name: submittedTarget,
                 reviewer_id: user.id,
                 reviewer_name: user.character_name,
                 review_title: reviewTitle,
                 review_points: reviewPoints,
                 image_urls: urls,
-                week_start: getWeekStart(reviewDate),
+                week_start: submittedWeek,
                 review_date: reviewDate,
                 tags: parseTags(tagsInput),
             });
@@ -347,7 +373,9 @@ export default function ReplayReviewPage() {
             setImageFiles([]);
             setImagePreviews([]);
             setMessage("复盘记录已提交");
-            await fetchAdminReviews(adminWeek);
+            setAdminWeek(submittedWeek);
+            setSelectedAdminTarget(submittedTarget);
+            await fetchAdminReviews(submittedWeek);
             await fetchViewerReviews(user);
         } catch (error: unknown) {
             console.error(error);
@@ -639,7 +667,7 @@ export default function ReplayReviewPage() {
                         <section className="space-y-4">
                             <div className="grid gap-4 md:grid-cols-4">
                                 <StatTile icon={UsersRound} label="被复盘人数" value={adminSummary.length} tone="text-cyan-400" />
-                                <StatTile icon={ClipboardList} label="记录数" value={adminReviews.length} tone="text-yellow-400" />
+                                <StatTile icon={ClipboardList} label="记录数" value={currentAdminReviews.length} tone="text-yellow-400" />
                                 <StatTile icon={Target} label="要点数" value={adminSummary.reduce((sum, row) => sum + row.points, 0)} tone="text-emerald-400" />
                                 <StatTile icon={ImagePlus} label="图片数" value={adminSummary.reduce((sum, row) => sum + row.images, 0)} tone="text-rose-400" />
                             </div>
@@ -653,12 +681,27 @@ export default function ReplayReviewPage() {
                                         </div>
                                         <p className="text-xs text-neutral-500">{formatWeekLabel(adminWeek)}</p>
                                     </div>
-                                    <input
-                                        type="date"
-                                        value={adminWeek}
-                                        onChange={(e) => setAdminWeek(getWeekStart(e.target.value))}
-                                        className="border-2 border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-bold text-white outline-none focus:border-yellow-500"
-                                    />
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        {adminWeeks.length > 0 && (
+                                            <select
+                                                value={adminWeek}
+                                                onChange={(e) => setAdminWeek(e.target.value)}
+                                                className="border-2 border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-bold text-white outline-none focus:border-yellow-500"
+                                            >
+                                                {adminWeeks.map((week) => (
+                                                    <option key={week} value={week}>
+                                                        {formatWeekLabel(week)}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        <input
+                                            type="date"
+                                            value={adminWeek}
+                                            onChange={(e) => setAdminWeek(getWeekStart(e.target.value))}
+                                            className="border-2 border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-bold text-white outline-none focus:border-yellow-500"
+                                        />
+                                    </div>
                                 </div>
 
                                 {adminSummary.length === 0 ? (
@@ -666,29 +709,134 @@ export default function ReplayReviewPage() {
                                         当前周暂无复盘记录
                                     </div>
                                 ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full min-w-[720px] border-collapse text-sm">
-                                            <thead>
-                                                <tr className="border-b-2 border-neutral-700 text-xs uppercase tracking-wider text-neutral-500">
-                                                    <th className="py-3 text-left">被复盘人</th>
-                                                    <th className="py-3 text-center">记录</th>
-                                                    <th className="py-3 text-center">要点</th>
-                                                    <th className="py-3 text-center">图片</th>
-                                                    <th className="py-3 text-right">最近复盘</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {adminSummary.map((row) => (
-                                                    <tr key={row.name} className="border-b border-neutral-700/60">
-                                                        <td className="py-3 font-black text-white">{row.name}</td>
-                                                        <td className="py-3 text-center text-yellow-300">{row.records}</td>
-                                                        <td className="py-3 text-center text-emerald-300">{row.points}</td>
-                                                        <td className="py-3 text-center text-cyan-300">{row.images}</td>
-                                                        <td className="py-3 text-right text-neutral-400">{formatDate(row.latest)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+                                        <div className="space-y-2">
+                                            <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                                                被复盘人名单
+                                            </div>
+                                            <div className="max-h-[620px] overflow-y-auto pr-1">
+                                                {adminSummary.map((row) => {
+                                                    const active = selectedAdminTarget === row.name;
+                                                    return (
+                                                        <button
+                                                            key={row.name}
+                                                            type="button"
+                                                            onClick={() => setSelectedAdminTarget(row.name)}
+                                                            className={`mb-2 flex w-full items-center justify-between border-2 p-3 text-left transition-colors ${
+                                                                active
+                                                                    ? "border-yellow-500 bg-yellow-500 text-black"
+                                                                    : "border-neutral-700 bg-neutral-900 text-white hover:border-cyan-500"
+                                                            }`}
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <div className="truncate text-sm font-black">{row.name}</div>
+                                                                <div className={`mt-1 text-[10px] font-bold ${active ? "text-black/70" : "text-neutral-500"}`}>
+                                                                    最近 {formatDate(row.latest)}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`px-2 py-1 text-xs font-black ${active ? "bg-black text-yellow-300" : "bg-cyan-500 text-black"}`}>
+                                                                    {row.records} 条
+                                                                </span>
+                                                                <ChevronRight className="h-4 w-4" />
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="min-w-0 border-2 border-neutral-700 bg-neutral-900 p-4">
+                                            {selectedAdminTarget ? (
+                                                <div className="space-y-4">
+                                                    <div className="flex flex-col gap-3 border-b-2 border-neutral-700 pb-3 md:flex-row md:items-end md:justify-between">
+                                                        <div>
+                                                            <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                                                                复盘明细
+                                                            </div>
+                                                            <h3 className="mt-1 text-xl font-black text-white">{selectedAdminTarget}</h3>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                                            <div className="bg-neutral-800 px-3 py-2">
+                                                                <div className="text-lg font-black text-yellow-300">{selectedAdminReviews.length}</div>
+                                                                <div className="text-[10px] text-neutral-500">记录</div>
+                                                            </div>
+                                                            <div className="bg-neutral-800 px-3 py-2">
+                                                                <div className="text-lg font-black text-emerald-300">
+                                                                    {selectedAdminReviews.reduce((sum, review) => sum + (splitPoints(review.review_points).length || 1), 0)}
+                                                                </div>
+                                                                <div className="text-[10px] text-neutral-500">要点</div>
+                                                            </div>
+                                                            <div className="bg-neutral-800 px-3 py-2">
+                                                                <div className="text-lg font-black text-cyan-300">
+                                                                    {selectedAdminReviews.reduce((sum, review) => sum + (review.image_urls?.length || 0), 0)}
+                                                                </div>
+                                                                <div className="text-[10px] text-neutral-500">图片</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {selectedAdminReviews.map((review) => {
+                                                        const points = splitPoints(review.review_points);
+                                                        return (
+                                                            <div key={review.id} className="border-b border-neutral-700 pb-4 last:border-b-0 last:pb-0">
+                                                                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-black text-white">
+                                                                            {review.review_title || "录屏复盘"}
+                                                                        </div>
+                                                                        <div className="mt-1 text-xs text-neutral-500">
+                                                                            {formatDate(review.review_date)}
+                                                                            {review.reviewer_name ? ` / ${review.reviewer_name}` : ""}
+                                                                        </div>
+                                                                    </div>
+                                                                    {review.tags?.length > 0 && (
+                                                                        <div className="flex flex-wrap gap-1 md:justify-end">
+                                                                            {review.tags.map((tag) => (
+                                                                                <span key={tag} className="bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
+                                                                                    {tag}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="mt-3 space-y-2">
+                                                                    {(points.length > 0 ? points : [review.review_points]).map((point, index) => (
+                                                                        <div key={`${review.id}-${index}`} className="flex gap-2 text-sm text-neutral-200">
+                                                                            <span className="mt-0.5 h-5 w-5 shrink-0 bg-neutral-700 text-center text-[10px] font-black leading-5 text-yellow-300">
+                                                                                {index + 1}
+                                                                            </span>
+                                                                            <span className="leading-relaxed">{point}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+
+                                                                {review.image_urls?.length > 0 && (
+                                                                    <div className="mt-3 flex flex-wrap gap-2">
+                                                                        {review.image_urls.map((url, index) => (
+                                                                            <a
+                                                                                key={`${review.id}-${url}-${index}`}
+                                                                                href={url}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="border border-neutral-700 bg-neutral-800 px-2 py-1 text-[10px] font-bold text-cyan-300 hover:border-cyan-500"
+                                                                            >
+                                                                                图片 {index + 1}
+                                                                            </a>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="flex min-h-60 items-center justify-center text-sm font-bold text-neutral-500">
+                                                    选择左侧被复盘人查看明细
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </PixelCard>
