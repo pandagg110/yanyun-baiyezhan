@@ -182,6 +182,27 @@ export interface Todo {
 }
 
 // ──────────────────────────────────────
+// Replay Review System (录屏复盘)
+// ──────────────────────────────────────
+
+/** 管理员提交的录屏复盘记录 */
+export interface ReplayReview {
+    id: string;
+    baiye_id: string;
+    target_name: string;
+    reviewer_id?: string | null;
+    reviewer_name?: string | null;
+    review_title?: string | null;
+    review_points: string;
+    image_urls: string[];
+    week_start: string;
+    review_date: string;
+    tags: string[];
+    created_at: string;
+    updated_at?: string;
+}
+
+// ──────────────────────────────────────
 // Roster System (排表系统)
 // ──────────────────────────────────────
 

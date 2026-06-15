@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Baiye, Feedback, GuestbookMessage, Room, RoomData, RoomMember, RoomState, Roster, RosterData, RosterMember, RosterOption, Todo, User, UserRole } from "@/types/app";
+import { Baiye, Feedback, GuestbookMessage, ReplayReview, Room, RoomData, RoomMember, RoomState, Roster, RosterData, RosterMember, RosterOption, Todo, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -822,6 +822,74 @@ export const SupabaseService = {
         const { data, error } = await query;
         if (error) throw error;
         return (data as Feedback[]) || [];
+    },
+
+    // ============ REPLAY REVIEW METHODS (录屏复盘) ============
+
+    /**
+     * Get replay review records for the current viewer.
+     * RLS limits non-admin users to rows matching their character_name.
+     */
+    getReplayReviews: async (
+        baiyeId: string,
+        options?: { targetName?: string; weekStart?: string; limit?: number }
+    ): Promise<ReplayReview[]> => {
+        let query = supabase
+            .from('baiyezhan_replay_reviews')
+            .select('*')
+            .eq('baiye_id', baiyeId)
+            .order('week_start', { ascending: false })
+            .order('created_at', { ascending: false });
+
+        if (options?.targetName) {
+            query = query.ilike('target_name', options.targetName);
+        }
+        if (options?.weekStart) {
+            query = query.eq('week_start', options.weekStart);
+        }
+        if (options?.limit) {
+            query = query.limit(options.limit);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data as ReplayReview[]) || [];
+    },
+
+    /**
+     * Admin creates a replay review record.
+     */
+    createReplayReview: async (review: {
+        baiye_id: string;
+        target_name: string;
+        reviewer_id?: string;
+        reviewer_name?: string;
+        review_title?: string;
+        review_points: string;
+        image_urls?: string[];
+        week_start: string;
+        review_date: string;
+        tags?: string[];
+    }): Promise<ReplayReview> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_replay_reviews')
+            .insert({
+                baiye_id: review.baiye_id,
+                target_name: review.target_name.trim(),
+                reviewer_id: review.reviewer_id || null,
+                reviewer_name: review.reviewer_name || null,
+                review_title: review.review_title?.trim() || null,
+                review_points: review.review_points.trim(),
+                image_urls: review.image_urls || [],
+                week_start: review.week_start,
+                review_date: review.review_date,
+                tags: review.tags || [],
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data as ReplayReview;
     },
 
     // ============ TODO METHODS (ToDo系统) ============

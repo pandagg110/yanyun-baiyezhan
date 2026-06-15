@@ -6,6 +6,7 @@ import { PixelCard } from "@/components/pixel/pixel-card";
 import { PixelInput } from "@/components/pixel/pixel-input";
 import { SupabaseService } from "@/services/supabase-service";
 import { Baiye, Room, User } from "@/types/app";
+import { Camera, ShieldCheck } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 
@@ -236,6 +237,22 @@ export default function BaiyeHallPage() {
                             >
                                 📋 排表工具
                             </button>
+                            <button
+                                onClick={() => router.push(`/baiye/${baiyeId}/replay`)}
+                                className="flex w-full items-center justify-center gap-2 py-3 bg-gradient-to-r from-sky-600 to-cyan-600 text-white font-bold text-sm border-2 border-sky-700 hover:from-sky-500 hover:to-cyan-500 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                            >
+                                <Camera className="h-4 w-4" />
+                                录屏复盘
+                            </button>
+                            {user?.role === 'admin' && (
+                                <button
+                                    onClick={() => router.push(`/baiye/${baiyeId}/replay?mode=admin`)}
+                                    className="flex w-full items-center justify-center gap-2 py-3 bg-neutral-700 text-white font-bold text-sm border-2 border-neutral-600 hover:bg-neutral-600 transition-all shadow-[2px_2px_0_0_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                                >
+                                    <ShieldCheck className="h-4 w-4 text-yellow-400" />
+                                    复盘管理
+                                </button>
+                            )}
                         </div>
                     </PixelCard>
 

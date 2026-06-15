@@ -1,9 +1,9 @@
 "use client";
 
-import { PixelButton } from "@/components/pixel/pixel-button";
 import { PixelCard } from "@/components/pixel/pixel-card";
 import { SupabaseService } from "@/services/supabase-service";
-import { User, UserRole } from "@/types/app";
+import { Baiye, User, UserRole } from "@/types/app";
+import { Camera, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -23,6 +23,7 @@ export default function AdminPage() {
     const router = useRouter();
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [users, setUsers] = useState<User[]>([]);
+    const [baiyeList, setBaiyeList] = useState<Baiye[]>([]);
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState<string | null>(null);
 
@@ -41,7 +42,7 @@ export default function AdminPage() {
             }
 
             setCurrentUser(user);
-            await fetchUsers();
+            await Promise.all([fetchUsers(), fetchBaiyeList()]);
             setLoading(false);
         };
         checkAccess();
@@ -53,6 +54,15 @@ export default function AdminPage() {
             setUsers(allUsers);
         } catch (error) {
             console.error("Failed to fetch users:", error);
+        }
+    };
+
+    const fetchBaiyeList = async () => {
+        try {
+            const list = await SupabaseService.getBaiyeList();
+            setBaiyeList(list);
+        } catch (error) {
+            console.error("Failed to fetch baiye list:", error);
         }
     };
 
@@ -72,8 +82,9 @@ export default function AdminPage() {
             if (userId === currentUser?.id && newRole !== "admin") {
                 router.push("/baiye");
             }
-        } catch (error: any) {
-            alert("更新失败: " + (error.message || JSON.stringify(error)));
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : JSON.stringify(error);
+            alert("更新失败: " + message);
         } finally {
             setUpdating(null);
         }
@@ -112,6 +123,33 @@ export default function AdminPage() {
 
             {/* User List */}
             <div className="max-w-4xl mx-auto w-full">
+                <PixelCard className="bg-neutral-800 mb-6">
+                    <div className="flex items-center gap-2 text-xl font-bold text-cyan-400 uppercase border-b-2 border-cyan-400/20 pb-2 mb-4">
+                        <Camera className="h-5 w-5" />
+                        录屏复盘管理
+                    </div>
+
+                    {baiyeList.length === 0 ? (
+                        <div className="text-center py-6 text-neutral-500">暂无百业数据</div>
+                    ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {baiyeList.map((baiye) => (
+                                <button
+                                    key={baiye.id}
+                                    onClick={() => router.push(`/baiye/${baiye.id}/replay?mode=admin`)}
+                                    className="flex items-center justify-between border-2 border-neutral-700 bg-neutral-900 p-3 text-left transition-colors hover:border-cyan-500"
+                                >
+                                    <div>
+                                        <div className="font-bold text-white">{baiye.name}</div>
+                                        <div className="text-xs text-neutral-500">提交复盘 / 查看周统计</div>
+                                    </div>
+                                    <ExternalLink className="h-4 w-4 text-cyan-400" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </PixelCard>
+
                 <PixelCard className="bg-neutral-800">
                     <div className="text-xl font-bold text-red-500 uppercase border-b-2 border-red-500/20 pb-2 mb-4">
                         所有用户 ({users.length})
