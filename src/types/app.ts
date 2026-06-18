@@ -72,6 +72,20 @@ export interface RoomData {
     members: RoomMember[];
 }
 
+export interface SkillCooldownTelemetry {
+    id: string;
+    room_code: string;
+    username: string;
+    profession: string;
+    skill_name: string;
+    cooldown_until?: string | null;
+    heartbeat_at: string;
+    client_reported_at?: string | null;
+    metadata?: Json;
+    created_at?: string;
+    updated_at?: string;
+}
+
 // ──────────────────────────────────────
 // Match System (对战记录 + 个人战绩)
 // ──────────────────────────────────────

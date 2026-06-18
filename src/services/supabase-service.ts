@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Baiye, Feedback, GuestbookMessage, ReplayReview, Room, RoomData, RoomMember, RoomState, Roster, RosterData, RosterMember, RosterOption, Todo, User, UserRole } from "@/types/app";
+import { Baiye, Feedback, GuestbookMessage, ReplayReview, Room, RoomData, RoomMember, RoomState, Roster, RosterData, RosterMember, RosterOption, SkillCooldownTelemetry, Todo, User, UserRole } from "@/types/app";
 
 /**
  * Real Supabase Service
@@ -508,6 +508,18 @@ export const SupabaseService = {
                 user: m.user // Flatten if needed depending on exact return shape
             })) || []
         } as unknown as RoomData;
+    },
+
+    getSkillCooldowns: async (roomCode: string): Promise<SkillCooldownTelemetry[]> => {
+        const { data, error } = await supabase
+            .from('baiyezhan_skill_cooldowns')
+            .select('*')
+            .eq('room_code', roomCode)
+            .order('username', { ascending: true })
+            .order('skill_name', { ascending: true });
+
+        if (error) throw error;
+        return (data as SkillCooldownTelemetry[]) || [];
     },
 
     // Actions

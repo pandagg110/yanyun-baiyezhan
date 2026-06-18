@@ -2,7 +2,7 @@
 
 > **数据库**: Supabase (PostgreSQL)  
 > **表前缀**: `baiyezhan_`  
-> **最后更新**: 2026-04-28  
+> **最后更新**: 2026-06-19  
 > **Schema**: `public`
 
 ---
@@ -42,6 +42,12 @@
            │ │ room_state     │ │ room_members           │
            │ │ (房间运行状态)   │ │ (房间成员)               │
            │ └────────────────┘ └────────────────────────┘
+           │       │ room_code
+           │       ▼
+           │ ┌──────────────────────────────┐
+           │ │ baiyezhan_skill_cooldowns    │
+           │ │ (埋点房间技能CD/心跳)          │
+           │ └──────────────────────────────┘
            │
            ▼ baiye_id
       ┌────────────────────────┐
@@ -126,7 +132,7 @@
 | `room_code` | `text` | UNIQUE, NOT NULL | — | 房间邀请码 |
 | `owner_id` | `uuid` | NOT NULL, FK → `baiyezhan_users(id)` ON DELETE CASCADE | — | 房主 ID |
 | `name` | `text` | NOT NULL | `'未命名房间'` | 房间名称 |
-| `room_type` | `text` | NOT NULL | `'default'` | 房间类型：`default` / `nameless` / `healer` / `tank` |
+| `room_type` | `text` | NOT NULL | `'default'` | 房间类型：`default` / `nameless` / `healer` / `tank` / `wuming` / `telemetry` |
 | `baiye_id` | `uuid` | FK → `baiyezhan_baiye(id)` ON DELETE CASCADE | `NULL` | 所属百业 ID |
 | `round_duration` | `integer` | — | `80` | 每轮时长（秒） |
 | `broadcast_interval` | `integer` | — | `10` | 广播间隔（秒） |
@@ -186,7 +192,38 @@
 
 ---
 
-### 7. `baiyezhan_matches` — 对战记录表 (对称设计)
+### 7. `baiyezhan_skill_cooldowns` — 埋点房间技能 CD 表
+
+> 外部客户端上传的实时状态表。每行表示某个房间内某个玩家的一个技能，上传端通过 `(room_code, username, skill_name)` upsert 覆盖当前状态。
+
+| 列名 | 类型 | 约束 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `id` | `uuid` | **PK** | `gen_random_uuid()` | 技能状态记录 ID |
+| `room_code` | `text` | NOT NULL, FK → `baiyezhan_rooms(room_code)` ON DELETE CASCADE | — | 房间码，外部客户端上传时使用 |
+| `username` | `text` | NOT NULL, CHECK 非空 | — | 玩家用户名/角色名 |
+| `profession` | `text` | NOT NULL | `''` | 玩家职业 |
+| `skill_name` | `text` | NOT NULL, CHECK 非空 | — | 技能名称 |
+| `cooldown_until` | `timestamptz` | — | `NULL` | 冷却结束时间；`NULL` 或早于当前时间表示就绪 |
+| `heartbeat_at` | `timestamptz` | NOT NULL | `now()` | 客户端最近一次上传/心跳时间 |
+| `client_reported_at` | `timestamptz` | — | `NULL` | 客户端原始采集时间 |
+| `metadata` | `jsonb` | NOT NULL | `'{}'` | 扩展数据 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 首次创建时间 |
+| `updated_at` | `timestamptz` | NOT NULL | `now()` | 最近更新时间 |
+
+**唯一约束**:
+- `uq_skill_cooldowns_room_user_skill` — `(room_code, username, skill_name)`，支持原子 upsert
+
+**索引**:
+- `idx_skill_cooldowns_room_heartbeat` — 按房间码读取实时状态并按心跳排序
+- `idx_skill_cooldowns_room_profession` — 按房间码和职业筛选/分组
+- `idx_skill_cooldowns_cooldown_until` — 查询未就绪技能
+
+**Realtime**:
+- 加入 `supabase_realtime` publication，房间页可订阅 INSERT/UPDATE/DELETE 实时刷新。
+
+---
+
+### 8. `baiyezhan_matches` — 对战记录表 (对称设计)
 
 > Match 级别记录。每条 = 一场百业对战（team_a vs team_b），双方共享同一条记录。通过 `match_key` 唯一约束实现去重。
 
@@ -225,7 +262,7 @@
 
 ---
 
-### 8. `baiyezhan_match_stats` — 个人战绩表 (含队伍归属)
+### 9. `baiyezhan_match_stats` — 个人战绩表 (含队伍归属)
 
 > Player 级别记录。每条 = 一个玩家在一场对战中的战斗数据。通过 `match_id` 关联 `matches` 表，`team_name` 标识所属队伍。
 
@@ -261,7 +298,7 @@
 
 ---
 
-### 9. `baiyezhan_match_screenshots` — 对战截图证据表
+### 10. `baiyezhan_match_screenshots` — 对战截图证据表
 
 > 记录每次提交对战数据时上传的截图，作为数据溯源依据。按队伍分组，支持在对战详情中查看原始截图。
 
@@ -285,7 +322,7 @@
 
 ---
 
-### 10. `baiyezhan_feedback` — 玩家反馈表
+### 11. `baiyezhan_feedback` — 玩家反馈表
 
 > 收集百业战玩家的体验反馈。支持未登录用户匿名提交，支持已登录用户选择匿名。
 
@@ -314,7 +351,7 @@
 
 ---
 
-### 11. `baiyezhan_todos` — 优化计划 ToDo 表
+### 12. `baiyezhan_todos` — 优化计划 ToDo 表
 
 > 存储由 AI 批量分析反馈后生成的结构化优化计划，管理员可管理状态。
 
@@ -342,7 +379,7 @@
 
 ---
 
-### 12. `baiyezhan_match_ai_analysis` — AI 战术分析缓存表
+### 13. `baiyezhan_match_ai_analysis` — AI 战术分析缓存表
 
 > 存储每场对战的 AI 生成战术分析结果。使用 UNIQUE(match_id, baiye_id) 约束，支持 upsert 重新生成。
 
@@ -382,6 +419,9 @@
 | `baiyezhan_rooms` | Public access | ALL | 公开读写 |
 | `baiyezhan_room_state` | Public access | ALL | 公开读写 |
 | `baiyezhan_room_members` | Public access | ALL | 公开读写 |
+| `baiyezhan_skill_cooldowns` | Public read skill cooldowns | SELECT | 所有人可读埋点房间技能状态 |
+| `baiyezhan_skill_cooldowns` | Public insert skill cooldowns | INSERT | 外部客户端可写入技能状态 |
+| `baiyezhan_skill_cooldowns` | Public update skill cooldowns | UPDATE | 外部客户端可通过 upsert 覆盖技能状态 |
 | `baiyezhan_guestbook` | Public read access | SELECT | 所有人可读 |
 | `baiyezhan_guestbook` | Authenticated insert access | INSERT | 认证用户可写，且 `author_id` 必须等于 `auth.uid()` |
 | `baiyezhan_guestbook` | User delete own or Admin delete all | DELETE | 用户删自己的，Admin/VIP 可删所有 |
@@ -480,6 +520,7 @@ baiyezhan_baiye.id      ──→ baiyezhan_matches.baiye_id        (CASCADE)
 baiyezhan_matches.id    ──→ baiyezhan_match_stats.match_id    (CASCADE)
 baiyezhan_rooms.id      ──→ baiyezhan_room_state.room_id      (CASCADE)
 baiyezhan_rooms.id      ──→ baiyezhan_room_members.room_id    (CASCADE)
+baiyezhan_rooms.room_code ─→ baiyezhan_skill_cooldowns.room_code (CASCADE)
 baiyezhan_baiye.id      ──→ baiyezhan_feedback.baiye_id       (CASCADE)
 baiyezhan_users.id      ──→ baiyezhan_feedback.user_id        (SET NULL)
 baiyezhan_baiye.id      ──→ baiyezhan_todos.baiye_id          (CASCADE)
@@ -508,6 +549,7 @@ baiyezhan_baiye.id      ──→ baiyezhan_match_ai_analysis.baiye_id (CASCADE)
 | 12 | `012_redesign_matches.sql` | 2026-04-11 | 对称重设计：team_a/team_b/match_key 去重，winner 替代 result |
 | 15 | `015_add_feedback_and_todos.sql` | 2026-04-28 | 新增玩家反馈表和优化计划ToDo表，构建反馈闭环系统 |
 | 20 | `020_add_match_ai_analysis.sql` | 2026-04-28 | 新增 AI 战术分析缓存表，支持保存和重新生成 |
+| 23 | `023_add_skill_cooldown_telemetry.sql` | 2026-06-19 | 新增埋点房间技能 CD/心跳表，支持外部客户端 upsert 上传 |
 
 ---
 

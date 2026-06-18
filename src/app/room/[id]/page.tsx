@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Guestbook } from "@/components/feature/guestbook";
 import { Copy, Lock, Settings, Skull, Trophy, UserMinus, Volume2, VolumeX, X, Play, Square } from "lucide-react";
+import { TelemetryRoomDashboard } from "@/components/feature/telemetry-room-dashboard";
 
 export default function RoomPage() {
     const params = useParams();
@@ -119,7 +120,8 @@ export default function RoomPage() {
     }, [data, userId, roomId, router]);
 
     // Broadcast Engine
-    const isManualMode = data?.room.room_type === 'healer'; // Linlin King is Manual
+    const isTelemetryMode = data?.room.room_type === 'telemetry';
+    const isManualMode = !isTelemetryMode && data?.room.room_type === 'healer'; // Linlin King is Manual
     console.log("RoomPage Debug:", { isManualMode, state: data?.state, round_start_time: data?.state?.round_start_time });
     const engine = useBroadcastEngine(
         data?.state?.round_start_time ?? null,
@@ -399,6 +401,8 @@ export default function RoomPage() {
 
     if (!data || !userId) return <div className="p-10 text-center text-white font-pixel">正在获取信号频率...</div>;
 
+    const roomTypeLabel = isTelemetryMode ? "埋点CD" : data.room.room_type === 'healer' ? '传递轴' : '轮询轴';
+
     // Current Assignee
     const currentAssignee =
         engine.currentAssigneeIndex !== null
@@ -416,10 +420,14 @@ export default function RoomPage() {
                     <div className="flex items-center gap-2">
                         <h1 className="text-xl font-bold text-yellow-500 uppercase">房间 {data.room.room_code}</h1>
                         <div className="bg-black/80 px-2 py-0.5 text-[10px] text-yellow-500 font-bold border border-yellow-500/50 backdrop-blur-sm">
-                            {data.room.room_type === 'healer' ? '传递轴' : '轮询轴'} (Beta)
+                            {roomTypeLabel} (Beta)
                         </div>
                     </div>
-                    {!isManualMode && (
+                    {isTelemetryMode ? (
+                        <div className="text-xs text-neutral-500">
+                            埋点数据看板
+                        </div>
+                    ) : !isManualMode && (
                         <div className="text-xs text-neutral-500">
                             一轮时长: {data.room.round_duration}秒 | 播报间隔: {data.room.broadcast_interval}秒
                         </div>
@@ -486,106 +494,110 @@ export default function RoomPage() {
                         </h2>
 
                         <div className="space-y-6">
-                            {/* Sliders */}
-                            <div className="space-y-4">
-                                {/* Removed Hotkey Config from here, moved to Header */}
+                            {!isTelemetryMode && (
+                                <>
+                                    {/* Sliders */}
+                                    <div className="space-y-4">
+                                        {/* Removed Hotkey Config from here, moved to Header */}
 
-                                <div className="space-y-2">
-                                    <label className="text-sm flex justify-between text-neutral-400 font-bold uppercase tracking-wider">
-                                        <span>一轮时长</span>
-                                        <span className="text-yellow-500">{data.room.round_duration}s</span>
-                                    </label>
-                                    <input
-                                        type="range"
-                                        min="50" max="90" step="1"
-                                        defaultValue={data.room.round_duration}
-                                        onChange={(e) => SupabaseService.updateRoomConfig(roomId, { roundDuration: Number(e.target.value) })}
-                                        className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-                                    />
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm flex justify-between text-neutral-400 font-bold uppercase tracking-wider">
+                                                <span>一轮时长</span>
+                                                <span className="text-yellow-500">{data.room.round_duration}s</span>
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="50" max="90" step="1"
+                                                defaultValue={data.room.round_duration}
+                                                onChange={(e) => SupabaseService.updateRoomConfig(roomId, { roundDuration: Number(e.target.value) })}
+                                                className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                            />
+                                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm flex justify-between text-neutral-400 font-bold uppercase tracking-wider">
-                                        <span>播报间隔</span>
-                                        <span className="text-yellow-500">{data.room.broadcast_interval}s</span>
-                                    </label>
-                                    <input
-                                        type="range"
-                                        min="6" max="14" step="0.5"
-                                        defaultValue={data.room.broadcast_interval}
-                                        onChange={(e) => SupabaseService.updateRoomConfig(roomId, { broadcastInterval: Number(e.target.value) })}
-                                        className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Files */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">播报音乐</label>
-                                    <div className="relative border-2 border-dashed border-neutral-700 rounded hover:border-yellow-500 transition-colors group">
-                                        <input
-                                            type="file"
-                                            accept="audio/*"
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                try {
-                                                    const url = await SupabaseService.uploadFile(file, 'sounds');
-                                                    SupabaseService.updateRoomConfig(roomId, { bgmTrack: url });
-                                                    alert("音乐已更新");
-                                                } catch (err: any) {
-                                                    alert("上传失败: " + (err.message || JSON.stringify(err)));
-                                                }
-                                            }}
-                                        />
-                                        <div className="p-3 text-center text-xs text-neutral-500 group-hover:text-yellow-500">
-                                            点击上传
+                                        <div className="space-y-2">
+                                            <label className="text-sm flex justify-between text-neutral-400 font-bold uppercase tracking-wider">
+                                                <span>播报间隔</span>
+                                                <span className="text-yellow-500">{data.room.broadcast_interval}s</span>
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="6" max="14" step="0.5"
+                                                defaultValue={data.room.broadcast_interval}
+                                                onChange={(e) => SupabaseService.updateRoomConfig(roomId, { broadcastInterval: Number(e.target.value) })}
+                                                className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                            />
                                         </div>
                                     </div>
-                                    <div className="text-[10px] text-neutral-600 truncate px-1 flex items-center justify-between">
-                                        <span>当前: {data.room.bgm_track === 'default' ? '默认' : '自定义'}</span>
-                                        {data.room.bgm_track && data.room.bgm_track !== 'default' && (
-                                            <button
-                                                onClick={() => togglePreview(data.room.bgm_track!)}
-                                                className="text-yellow-500 hover:text-white"
-                                                title="试听"
-                                            >
-                                                {previewAudio ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">封面图片</label>
-                                    <div className="relative border-2 border-dashed border-neutral-700 rounded hover:border-yellow-500 transition-colors group">
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                try {
-                                                    const url = await SupabaseService.uploadFile(file, 'image');
-                                                    SupabaseService.updateRoomConfig(roomId, { coverImage: url });
-                                                    alert("封面已更新");
-                                                } catch (err: any) {
-                                                    alert("上传失败: " + (err.message || JSON.stringify(err)));
-                                                }
-                                            }}
-                                        />
-                                        <div className="p-3 text-center text-xs text-neutral-500 group-hover:text-yellow-500">
-                                            点击上传
+                                    {/* Files */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">播报音乐</label>
+                                            <div className="relative border-2 border-dashed border-neutral-700 rounded hover:border-yellow-500 transition-colors group">
+                                                <input
+                                                    type="file"
+                                                    accept="audio/*"
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        try {
+                                                            const url = await SupabaseService.uploadFile(file, 'sounds');
+                                                            SupabaseService.updateRoomConfig(roomId, { bgmTrack: url });
+                                                            alert("音乐已更新");
+                                                        } catch (err: any) {
+                                                            alert("上传失败: " + (err.message || JSON.stringify(err)));
+                                                        }
+                                                    }}
+                                                />
+                                                <div className="p-3 text-center text-xs text-neutral-500 group-hover:text-yellow-500">
+                                                    点击上传
+                                                </div>
+                                            </div>
+                                            <div className="text-[10px] text-neutral-600 truncate px-1 flex items-center justify-between">
+                                                <span>当前: {data.room.bgm_track === 'default' ? '默认' : '自定义'}</span>
+                                                {data.room.bgm_track && data.room.bgm_track !== 'default' && (
+                                                    <button
+                                                        onClick={() => togglePreview(data.room.bgm_track!)}
+                                                        className="text-yellow-500 hover:text-white"
+                                                        title="试听"
+                                                    >
+                                                        {previewAudio ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">封面图片</label>
+                                            <div className="relative border-2 border-dashed border-neutral-700 rounded hover:border-yellow-500 transition-colors group">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        try {
+                                                            const url = await SupabaseService.uploadFile(file, 'image');
+                                                            SupabaseService.updateRoomConfig(roomId, { coverImage: url });
+                                                            alert("封面已更新");
+                                                        } catch (err: any) {
+                                                            alert("上传失败: " + (err.message || JSON.stringify(err)));
+                                                        }
+                                                    }}
+                                                />
+                                                <div className="p-3 text-center text-xs text-neutral-500 group-hover:text-yellow-500">
+                                                    点击上传
+                                                </div>
+                                            </div>
+                                            <div className="text-[10px] text-neutral-600 truncate px-1">
+                                                当前: {data.room.cover_image === 'default' ? '默认' : '自定义'}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="text-[10px] text-neutral-600 truncate px-1">
-                                        当前: {data.room.cover_image === 'default' ? '默认' : '自定义'}
-                                    </div>
-                                </div>
-                            </div>
+                                </>
+                            )}
 
                             {/* Password Config */}
                             <div className="space-y-2 pt-4 border-t border-neutral-700">
@@ -622,6 +634,14 @@ export default function RoomPage() {
                 </div>
             )}
 
+            {isTelemetryMode ? (
+                <div className="flex-1">
+                    <TelemetryRoomDashboard roomCode={data.room.room_code} />
+                    <div className="w-full max-w-6xl mx-auto px-4 mt-8 border-t-2 border-neutral-800 pt-8 pb-12">
+                        <Guestbook type="room" targetId={roomId} />
+                    </div>
+                </div>
+            ) : (
             <div className="flex-1 p-4 flex flex-col gap-6 max-w-2xl mx-auto w-full">
 
                 {/* Main Status Card */}
@@ -801,6 +821,7 @@ export default function RoomPage() {
                     <Guestbook type="room" targetId={roomId} />
                 </div>
             </div >
+            )}
         </main >
     );
 }

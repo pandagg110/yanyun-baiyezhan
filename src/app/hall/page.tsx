@@ -169,7 +169,7 @@ export default function HallPage() {
 
                                 <div className="space-y-2">
                                     <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">作战类型</label>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
                                         <button
                                             onClick={() => setRoomType("wuming")}
                                             className={`p-2 text-xs font-bold uppercase border-2 transition-all ${roomType === 'wuming'
@@ -178,6 +178,15 @@ export default function HallPage() {
                                                 }`}
                                         >
                                             轮询轴
+                                        </button>
+                                        <button
+                                            onClick={() => setRoomType("telemetry")}
+                                            className={`p-2 text-xs font-bold uppercase border-2 transition-all ${roomType === 'telemetry'
+                                                ? 'bg-cyan-500 border-black text-black'
+                                                : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-white'
+                                                }`}
+                                        >
+                                            埋点CD
                                         </button>
                                         <button
                                             disabled
@@ -201,6 +210,8 @@ export default function HallPage() {
 
                                     {showAdvanced && (
                                         <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            {roomType !== 'telemetry' && (
+                                                <>
                                             {/* Sliders */}
                                             <div className="space-y-2">
                                                 <label className="text-sm flex justify-between text-neutral-400 font-bold uppercase tracking-wider">
@@ -312,6 +323,8 @@ export default function HallPage() {
                                                     </div>
                                                 </div>
                                             </div>
+                                                </>
+                                            )}
                                             {/* Room Password */}
                                             <div className="space-y-2">
                                                 <label className="text-sm font-bold uppercase tracking-wider text-neutral-400">房间密码 (可选)</label>
@@ -438,7 +451,7 @@ export default function HallPage() {
                                         )}
                                         {/* Badge */}
                                         <div className="absolute top-2 right-2 bg-black/80 px-2 py-0.5 text-[10px] text-yellow-500 font-bold border border-yellow-500/50 backdrop-blur-sm">
-                                            {room.room_type === 'healer' ? '传递轴' : '轮询轴'}
+                                            {room.room_type === 'telemetry' ? '埋点CD' : room.room_type === 'healer' ? '传递轴' : '轮询轴'}
                                         </div>
                                     </div>
 
