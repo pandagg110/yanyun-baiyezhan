@@ -6,6 +6,8 @@
 
 表名：`public.baiyezhan_skill_cooldowns`
 
+房间码是 `baiyezhan_rooms.room_code`，数据库层面全局唯一，不按百业分区。新创建房间使用 8 位数字码。
+
 一行代表一个玩家的一个技能。唯一键是：
 
 ```text
@@ -18,7 +20,7 @@ room_code + username + skill_name
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `room_code` | 是 | 房间码，例如 `1234` |
+| `room_code` | 是 | 全局唯一房间码，例如 `12345678` |
 | `username` | 是 | 玩家用户名/角色名 |
 | `profession` | 是 | 职业 |
 | `skill_name` | 是 | 技能名称 |
@@ -46,7 +48,7 @@ Content-Type: application/json
 
 ```json
 {
-  "room_code": "1234",
+  "room_code": "12345678",
   "username": "玩家A",
   "profession": "九灵",
   "skill_name": "环灵诀",
@@ -58,7 +60,7 @@ Content-Type: application/json
 
 ```json
 {
-  "room_code": "1234",
+  "room_code": "12345678",
   "username": "玩家A",
   "profession": "九灵",
   "skill_name": "环灵诀",
@@ -72,14 +74,14 @@ Content-Type: application/json
 {
   "items": [
     {
-      "room_code": "1234",
+      "room_code": "12345678",
       "username": "玩家A",
       "profession": "九灵",
       "skill_name": "环灵诀",
       "cooldown_until": "2026-06-19T12:35:20.000Z"
     },
     {
-      "room_code": "1234",
+      "room_code": "12345678",
       "username": "玩家A",
       "profession": "九灵",
       "skill_name": "蛊身祭命",
@@ -120,17 +122,17 @@ Content-Type: application/json
 请求：
 
 ```http
-GET /api/telemetry/skill-cooldowns?room_code=1234
+GET /api/telemetry/skill-cooldowns?room_code=12345678
 ```
 
 返回：
 
 ```json
 {
-  "room_code": "1234",
+  "room_code": "12345678",
   "records": [
     {
-      "room_code": "1234",
+      "room_code": "12345678",
       "username": "玩家A",
       "profession": "九灵",
       "skill_name": "环灵诀",
@@ -175,7 +177,7 @@ Prefer: resolution=merge-duplicates,return=representation
 ```json
 [
   {
-    "room_code": "1234",
+    "room_code": "12345678",
     "username": "玩家A",
     "profession": "九灵",
     "skill_name": "环灵诀",

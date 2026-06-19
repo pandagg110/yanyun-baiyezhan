@@ -129,7 +129,7 @@
 | 列名 | 类型 | 约束 | 默认值 | 说明 |
 |---|---|---|---|---|
 | `id` | `uuid` | **PK** | `gen_random_uuid()` | 房间唯一 ID |
-| `room_code` | `text` | UNIQUE, NOT NULL | — | 房间邀请码 |
+| `room_code` | `text` | UNIQUE, NOT NULL | — | 全局唯一房间邀请码；新建房间生成 8 位数字码 |
 | `owner_id` | `uuid` | NOT NULL, FK → `baiyezhan_users(id)` ON DELETE CASCADE | — | 房主 ID |
 | `name` | `text` | NOT NULL | `'未命名房间'` | 房间名称 |
 | `room_type` | `text` | NOT NULL | `'default'` | 房间类型：`default` / `nameless` / `healer` / `tank` / `wuming` / `telemetry` |

@@ -20,7 +20,7 @@ export const MockService = {
     createRoom: async (ownerId: string, name: string): Promise<RoomData> => {
         await new Promise(resolve => setTimeout(resolve, 800));
         const roomId = "mock-room-" + Math.random().toString(36).substr(2, 9);
-        const roomCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4 digit code
+        const roomCode = Math.floor(10000000 + Math.random() * 90000000).toString(); // 8 digit code
 
         const room: Room = {
             id: roomId,

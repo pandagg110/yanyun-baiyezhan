@@ -5,6 +5,19 @@ import { Baiye, Feedback, GuestbookMessage, ReplayReview, Room, RoomData, RoomMe
  * Real Supabase Service
  * Uses 'baiyezhan_' prefixed tables.
  */
+const ROOM_CODE_LENGTH = 8;
+const MAX_ROOM_CODE_ATTEMPTS = 10;
+
+function generateRoomCode() {
+    const min = 10 ** (ROOM_CODE_LENGTH - 1);
+    const range = 9 * min;
+    return Math.floor(min + Math.random() * range).toString();
+}
+
+function isRoomCodeCollision(error: { code?: string } | null) {
+    return error?.code === '23505';
+}
+
 export const SupabaseService = {
     // Auth
     getSession: async () => {
@@ -290,27 +303,43 @@ export const SupabaseService = {
     },
 
     createRoom: async (ownerId: string, name: string, roomType: string, config: { roundDuration: number, broadcastInterval: number, bgmTrack?: string, coverImage?: string, password?: string, baiyeId?: string }): Promise<RoomData> => {
-        const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+        let room: Room | null = null;
+        let lastRoomError: { code?: string; message?: string } | null = null;
 
-        // 1. Create Room
-        const { data: room, error: roomError } = await supabase
-            .from('baiyezhan_rooms')
-            .insert({
-                owner_id: ownerId,
-                room_code: roomCode,
-                name: name,
-                room_type: roomType,
-                round_duration: config.roundDuration,
-                broadcast_interval: config.broadcastInterval,
-                bgm_track: config.bgmTrack || 'default',
-                cover_image: config.coverImage || 'default',
-                password: config.password || null,
-                baiye_id: config.baiyeId || null
-            })
-            .select()
-            .single();
+        // 1. Create Room. room_code has a global UNIQUE constraint in DB.
+        for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt++) {
+            const roomCode = generateRoomCode();
+            const { data: createdRoom, error: roomError } = await supabase
+                .from('baiyezhan_rooms')
+                .insert({
+                    owner_id: ownerId,
+                    room_code: roomCode,
+                    name: name,
+                    room_type: roomType,
+                    round_duration: config.roundDuration,
+                    broadcast_interval: config.broadcastInterval,
+                    bgm_track: config.bgmTrack || 'default',
+                    cover_image: config.coverImage || 'default',
+                    password: config.password || null,
+                    baiye_id: config.baiyeId || null
+                })
+                .select()
+                .single();
 
-        if (roomError) throw roomError;
+            if (!roomError && createdRoom) {
+                room = createdRoom as Room;
+                break;
+            }
+
+            lastRoomError = roomError;
+            if (!isRoomCodeCollision(roomError)) {
+                throw roomError;
+            }
+        }
+
+        if (!room) {
+            throw lastRoomError || new Error('Failed to generate a unique room code');
+        }
 
         // 2. Create State
         const { data: state, error: stateError } = await supabase

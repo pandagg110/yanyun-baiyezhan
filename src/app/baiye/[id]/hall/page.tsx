@@ -351,11 +351,11 @@ export default function BaiyeHallPage() {
                         </div>
                         <form onSubmit={(e) => handleJoin(e, roomCode, joinPassword)} className="space-y-4">
                             <PixelInput
-                                placeholder="输入4位房间码"
+                                placeholder="输入8位房间码"
                                 value={roomCode}
                                 onChange={(e) => setRoomCode(e.target.value)}
                                 className="text-center text-lg tracking-[0.5em] font-mono"
-                                maxLength={4}
+                                maxLength={8}
                             />
                             <input
                                 type="password"
